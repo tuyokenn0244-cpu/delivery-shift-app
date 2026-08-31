@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="配送シフト" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <title>配送シフト</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">自分用</div>
+      <h1>配送シフト</h1>
+    </div>
+    <button id="installBtn" class="secondary hidden">ホーム画面に追加</button>
+  </header>
+
+  <main>
+    <section class="card controls">
+      <label>氏名
+        <input id="workerName" value="竹谷 健" autocomplete="name" />
+      </label>
+      <div class="row">
+        <button id="saveName">氏名を保存</button>
+        <button id="openScanner" class="accent">勤務表を撮る / 選ぶ</button>
+      </div>
+      <input id="photoInput" type="file" accept="image/*" capture="environment" hidden />
+      <p id="scanStatus" class="muted">現在は9月1〜10日の勤務データを登録済みです。</p>
+      <div id="scanProgressWrap" class="progress-wrap hidden"><div id="scanProgress" class="progress"></div></div>
+    </section>
+
+    <section class="card">
+      <div class="month-head">
+        <button id="prevMonth" class="iconbtn" aria-label="前の月">‹</button>
+        <div><div id="monthLabel" class="month-label"></div><div id="personLabel" class="muted small"></div></div>
+        <button id="nextMonth" class="iconbtn" aria-label="次の月">›</button>
+      </div>
+      <div class="weekdays"><span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span></div>
+      <div id="calendar" class="calendar"></div>
+    </section>
+
+    <section class="card">
+      <h2>選択日の詳細</h2>
+      <div id="detail"></div>
+    </section>
+
+    <section id="ocrPreview" class="card hidden">
+      <div class="section-head"><h2>写真の読取候補</h2><button id="closePreview" class="secondary">閉じる</button></div>
+      <p class="muted">OCRは表の罫線で誤ることがあります。数字を確認・修正してから登録してください。</p>
+      <div class="table-scroll"><table><thead><tr><th>日</th><th>2便</th><th>3便</th><th>休み</th></tr></thead><tbody id="previewBody"></tbody></table></div>
+      <button id="commitPreview" class="accent full">確認した内容をカレンダーへ登録</button>
+    </section>
+
+    <section class="card">
+      <details>
+        <summary>コース別の出勤時間を編集</summary>
+        <p class="muted">新しいコースが出たらここに「コース番号＝出勤時間」を追加できます。</p>
+        <div id="timeMap"></div>
+        <div class="row three"><input id="newCourse" inputmode="numeric" placeholder="例 210" maxlength="3" /><input id="newTime" placeholder="例 6:05〜6:15" /><button id="addTime">追加</button></div>
+      </details>
+    </section>
+  </main>
+
+  <footer>データはこのiPhone内（ブラウザのローカル保存）に保存されます。</footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

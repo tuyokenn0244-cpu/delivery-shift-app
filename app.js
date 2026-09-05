@@ -9,7 +9,7 @@ const seeded={
   timeMap:{'204':'6:05〜6:15','205':'6:05〜6:15','208':'6:05〜6:15','214':'6:05〜6:15','213':'6:20〜6:30','221':'6:20〜6:30','224':'6:35〜6:45'}
 };
 let data=load(); let view=new Date(2026,8,1); let selected='2026-09-01'; let preview={}; let deferredPrompt=null;
-let lastOCR=null;
+let lastOCR=null; let manualPick={nameX:null,nameY:null,dateX:null,dateY:null,firstDate:null};
 function cloneSeed(){return JSON.parse(JSON.stringify(seeded))}
 function load(){try{const x=JSON.parse(localStorage.getItem(STORAGE));return x?{...seeded,...x,shifts:{...seeded.shifts,...(x.shifts||{})},timeMap:{...seeded.timeMap,...(x.timeMap||{})}}:cloneSeed()}catch{return cloneSeed()}}
 function save(){localStorage.setItem(STORAGE,JSON.stringify(data))}
@@ -44,31 +44,83 @@ function buildPreview(rows,meta={}){preview={};const body=el('previewBody');body
   el('ocrPreview').classList.remove('hidden');el('ocrPreview').scrollIntoView({behavior:'smooth'})}
 el('commitPreview').onclick=()=>{const y=view.getFullYear(),m=view.getMonth();for(const dStr of Object.keys(preview)){const d=Number(dStr),r=preview[d],k=key(y,m,d);if(r.off){data.shifts[k]={off:true}}else if(r.second||r.third){data.shifts[k]={second:r.second,third:r.third}}else{delete data.shifts[k]}}save();render();el('ocrPreview').classList.add('hidden');el('scanStatus').textContent='確認した勤務データを登録しました。出勤時間は登録済みのコース時間表から表示します。'};
 
-function showRowPicker(canvas){
-  const box=el('rowPicker'), out=el('rowPickerCanvas'), status=el('rowPickerStatus');
+function showManualPicker(canvas,reason='自動認識が不安定でした。'){
+  const box=el('rowPicker'), out=el('rowPickerCanvas'), status=el('rowPickerStatus'), step=el('pickerStep'), firstDate=el('firstDateInput'), runBtn=el('runManualRead');
+  manualPick={nameX:null,nameY:null,dateX:null,dateY:null,firstDate:null};
   out.width=canvas.width; out.height=canvas.height;
   const ctx=out.getContext('2d'); ctx.clearRect(0,0,out.width,out.height); ctx.drawImage(canvas,0,0);
-  status.textContent='写真の中の自分の名前を1回タップしてください。';
+  step.textContent='① 写真の中の自分の名前をタップしてください。';
+  status.textContent=reason+' 写真上で「自分の名前」→「最初の日付」の順にタップします。';
+  firstDate.value=''; firstDate.disabled=true; runBtn.disabled=true;
   box.classList.remove('hidden'); box.scrollIntoView({behavior:'smooth',block:'start'});
+  drawPickerMarks();
+}
+function drawPickerMarks(){
+  if(!lastOCR?.canvas)return;
+  const out=el('rowPickerCanvas'), ctx=out.getContext('2d');
+  ctx.clearRect(0,0,out.width,out.height); ctx.drawImage(lastOCR.canvas,0,0);
+  ctx.save(); ctx.lineWidth=Math.max(4,out.width/500); ctx.font=`${Math.max(26,out.width/32)}px sans-serif`;
+  if(manualPick.nameX!=null){ctx.strokeStyle='#2563eb';ctx.fillStyle='#2563eb';ctx.beginPath();ctx.arc(manualPick.nameX,manualPick.nameY,Math.max(14,out.width/70),0,Math.PI*2);ctx.stroke();ctx.fillText('①',manualPick.nameX+18,manualPick.nameY-12)}
+  if(manualPick.dateX!=null){ctx.strokeStyle='#dc2626';ctx.fillStyle='#dc2626';ctx.beginPath();ctx.arc(manualPick.dateX,manualPick.dateY,Math.max(14,out.width/70),0,Math.PI*2);ctx.stroke();ctx.fillText('②',manualPick.dateX+18,manualPick.dateY-12)}
+  ctx.restore();
+}
+function nearestRecognizedDay(words,x,y){
+  let best=null;
+  for(const w of words){const d=digits(w.text),n=Number(d);if(!d||d.length>2||n<1||n>31)continue;const dx=centerX(w)-x,dy=centerY(w)-y,dist=Math.hypot(dx,dy*1.5);if(!best||dist<best.dist)best={day:n,dist,w}}
+  return best&&best.dist<Math.max(90,lastOCR?.canvas?.width*0.06||90)?best.day:null;
+}
+function clusterByX(items,tol){
+  const clusters=[];[...items].sort((a,b)=>centerX(a)-centerX(b)).forEach(w=>{const x=centerX(w);let c=clusters.find(c=>Math.abs(c.x-x)<=tol);if(!c){c={x,items:[]};clusters.push(c)}c.items.push(w);c.x=c.items.reduce((n,z)=>n+centerX(z),0)/c.items.length});return clusters;
+}
+function findTableColumns(words,minX){
+  const nums=words.filter(w=>{const d=digits(w.text),n=Number(d);return d.length===3&&n>=200&&n<=399&&centerX(w)>minX});
+  if(nums.length<6)return null;
+  const widths=nums.map(w=>Math.max(1,w.bbox.x1-w.bbox.x0)); const tol=Math.max(16,median(widths)*0.8);
+  let clusters=clusterByX(nums,tol).filter(c=>c.items.length>=2).sort((a,b)=>a.x-b.x);
+  if(clusters.length<4){clusters=clusterByX(nums,tol*1.35).filter(c=>c.items.length>=2).sort((a,b)=>a.x-b.x)}
+  return clusters.length>=4?clusters:null;
+}
+function nearestColumnIndex(x,cols){let best=null;cols.forEach((c,i)=>{const d=Math.abs(c.x-x);if(!best||d<best.d)best={i,d}});const gaps=[];for(let i=1;i<cols.length;i++)gaps.push(cols[i].x-cols[i-1].x);const spacing=median(gaps)||90;return best&&best.d<=spacing*.62?best.i:null}
+function parseTableFromTwoTaps(words,nameX,nameY,dateX,firstDay){
+  if(!(firstDay>=1&&firstDay<=31))throw new Error('FIRST_DATE_REQUIRED');
+  const fakeBox={x0:nameX,y0:nameY-20,x1:nameX+12,y1:nameY+20};
+  const lines=findCourseLines(words,fakeBox); if(!lines)throw new Error('COURSE_ROWS_NOT_FOUND');
+  const cols=findTableColumns(words,nameX+20); if(!cols)throw new Error('COLUMN_GRID_NOT_FOUND');
+  const anchor=nearestColumnIndex(dateX,cols); if(anchor==null)throw new Error('DATE_COLUMN_NOT_FOUND');
+  const out={};
+  const put=(w,type,min,max)=>{const n=Number(digits(w.text));if(n<min||n>max)return;const ci=nearestColumnIndex(centerX(w),cols);if(ci==null)return;const day=firstDay+(ci-anchor);if(day<1||day>31)return;out[day]={...(out[day]||{}),[type]:String(n)}};
+  lines.second.items.forEach(w=>put(w,'second',200,299)); lines.third.items.forEach(w=>put(w,'third',300,399));
+  // 表示中の列は空欄も休み候補として出す。前後に過剰拡張しない。
+  const used=Object.keys(out).map(Number); if(!used.length)throw new Error('NO_COURSES_MAPPED');
+  const min=Math.max(1,firstDay-anchor), max=Math.min(31,firstDay+(cols.length-1-anchor));
+  for(let d=min;d<=max;d++){if(!out[d])out[d]={off:true}}
+  return {rows:out,nameMode:'2点タップ指定'};
 }
 el('closeRowPicker').onclick=()=>el('rowPicker').classList.add('hidden');
 el('rowPickerCanvas').addEventListener('click',e=>{
   if(!lastOCR)return;
   const canvas=el('rowPickerCanvas'), rect=canvas.getBoundingClientRect();
   const x=(e.clientX-rect.left)*(canvas.width/rect.width), y=(e.clientY-rect.top)*(canvas.height/rect.height);
+  const step=el('pickerStep'),status=el('rowPickerStatus'),firstDate=el('firstDateInput'),runBtn=el('runManualRead');
+  if(manualPick.nameX==null){
+    manualPick.nameX=x;manualPick.nameY=y;step.textContent='② 次に、表の上にある「最初の日付」をタップしてください。';status.textContent='名前の位置を保存しました。次は、その写真で一番左に表示されている日付（例：11）をタップしてください。';
+  }else if(manualPick.dateX==null){
+    manualPick.dateX=x;manualPick.dateY=y;const guessed=nearestRecognizedDay(lastOCR.words,x,y);manualPick.firstDate=guessed;firstDate.value=guessed||'';firstDate.disabled=false;runBtn.disabled=false;step.textContent='③ 日付を確認して「この位置で読み取る」を押してください。';status.textContent=guessed?`日付「${guessed}」付近を指定しました。数字が合っているか確認してください。`:'日付の数字だけ自動確認できませんでした。下の欄にタップした日付を入力してください。';
+  }else{
+    // やり直したい場合は日付タップを更新
+    manualPick.dateX=x;manualPick.dateY=y;const guessed=nearestRecognizedDay(lastOCR.words,x,y);if(guessed){manualPick.firstDate=guessed;firstDate.value=guessed}status.textContent='日付位置を更新しました。';
+  }
+  drawPickerMarks();
+});
+el('resetManualPick').onclick=()=>{if(lastOCR?.canvas)showManualPicker(lastOCR.canvas,'指定をやり直します。')};
+el('firstDateInput').addEventListener('input',e=>{const n=Number(e.target.value);manualPick.firstDate=(n>=1&&n<=31)?n:null;el('runManualRead').disabled=!manualPick.firstDate||manualPick.dateX==null||manualPick.nameX==null});
+el('runManualRead').onclick=()=>{
   const status=el('rowPickerStatus');
   try{
-    const parsed=parseTableFromTap(lastOCR.words,x,y);
-    buildPreview(parsed.rows,{nameMode:'名前をタップして指定'});
-    status.textContent='タップした行から候補を作成しました。内容を確認してください。';
-    el('rowPicker').classList.add('hidden');
-    el('scanStatus').textContent='名前をタップして本人行を指定しました。読み取り候補を確認してください。';
-  }catch(err){
-    console.error(err);
-    const msg={DATE_HEADER_NOT_FOUND:'日付欄を確認できません。日付見出しまで写るように撮り直してください。',COURSE_ROWS_NOT_FOUND:'タップ位置の右側に2便・3便を確認できませんでした。氏名の中央付近をタップしてください。',NO_COURSES_MAPPED:'コース番号を日付列に対応できませんでした。氏名をもう一度タップしてください。'};
-    status.textContent=msg[err.message]||'この位置では読み取れませんでした。自分の名前の中央付近をもう一度タップしてください。';
-  }
-});
+    const firstDay=Number(el('firstDateInput').value);const parsed=parseTableFromTwoTaps(lastOCR.words,manualPick.nameX,manualPick.nameY,manualPick.dateX,firstDay);
+    buildPreview(parsed.rows,{nameMode:'名前＋最初の日付をタップ'});status.textContent='2点指定から候補を作成しました。内容を確認してください。';el('rowPicker').classList.add('hidden');el('scanStatus').textContent='本人行と日付位置を手動指定しました。読み取り候補を確認してください。';
+  }catch(err){console.error(err);const msg={FIRST_DATE_REQUIRED:'日付を1〜31で入力してください。',COURSE_ROWS_NOT_FOUND:'名前のタップ位置から2便・3便を特定できませんでした。「竹谷 健」の文字中央をタップし直してください。',COLUMN_GRID_NOT_FOUND:'表の縦列を確認できませんでした。写真全体が入った画像を使ってください。',DATE_COLUMN_NOT_FOUND:'タップした日付と表の列を対応できませんでした。日付の数字中央をタップし直してください。',NO_COURSES_MAPPED:'本人行のコースを列へ対応できませんでした。2点を指定し直してください。'};status.textContent=msg[err.message]||'読み取り候補を作れませんでした。2点を指定し直してください。';}
+};
 
 async function preprocess(file){
   const img=await createImageBitmap(file); const maxW=2200; const scale=Math.min(2.0,maxW/img.width); const w=Math.max(1,Math.round(img.width*scale)),h=Math.max(1,Math.round(img.height*scale));
@@ -85,13 +137,11 @@ async function scan(file){
     const words=result.data.words||[]; lastOCR={words,text:result.data.text,canvas}; const parsed=parseTable(words,result.data.text); buildPreview(parsed.rows,{nameMode:parsed.nameMode}); status.textContent='本人の行と日付列を対応させた候補を作りました。内容を確認してから登録してください。';bar.style.width='100%';
   }catch(e){
     console.error(e);
-    if(e.message==='NAME_NOT_FOUND' && lastOCR?.canvas){
-      status.textContent='氏名を自動で確認できませんでした。写真の自分の名前を1回タップしてください。';
-      showRowPicker(lastOCR.canvas);
-    }else{
-      const msg={DATE_HEADER_NOT_FOUND:'日付の見出しを確認できませんでした。日付欄と氏名欄が両方入るように撮影してください。',COURSE_ROWS_NOT_FOUND:'本人の2便・3便の2行を特定できませんでした。誤登録を防ぐため停止しました。',NO_COURSES_MAPPED:'コース番号を日付の列位置に対応できませんでした。誤登録を防ぐため停止しました。'};
-      status.textContent=msg[e.message]||'読み取りに失敗しました。写真を明るく真上から撮って再試行してください。';
-    }
+    if(lastOCR?.canvas){
+      const reasons={NAME_NOT_FOUND:'氏名を自動確認できませんでした。',DATE_HEADER_NOT_FOUND:'日付見出しを自動確認できませんでした。',COURSE_ROWS_NOT_FOUND:'本人の2便・3便を自動特定できませんでした。',NO_COURSES_MAPPED:'コースと日付を自動対応できませんでした。'};
+      status.textContent=(reasons[e.message]||'自動読み取りが不安定でした。')+' 手動指定画面へ切り替えます。';
+      showManualPicker(lastOCR.canvas,reasons[e.message]||'自動読み取りが不安定でした。');
+    }else{status.textContent='読み取りに失敗しました。もう一度写真を選んでください。'}
   }finally{setTimeout(()=>wrap.classList.add('hidden'),900)}
 }
 function centerX(w){return (w.bbox.x0+w.bbox.x1)/2}
@@ -173,5 +223,5 @@ function parseTable(words,text){
 el('photoInput').onchange=e=>{const f=e.target.files?.[0];if(f)scan(f);e.target.value=''};
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;el('installBtn').classList.remove('hidden')});
 el('installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}else{alert('iPhoneではSafariの共有ボタン →「ホーム画面に追加」を選んでください。')}};
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=4').catch(console.warn);
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=5').catch(console.warn);
 render();

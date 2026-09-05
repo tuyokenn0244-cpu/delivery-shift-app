@@ -52,10 +52,20 @@
 
 
     <section id="rowPicker" class="card hidden">
-      <div class="section-head"><h2>自分の名前の行を指定</h2><button id="closeRowPicker" class="secondary">閉じる</button></div>
-      <p class="muted">氏名を自動で見つけられなかった場合だけ使います。写真の中の<strong>自分の名前</strong>を1回タップしてください。No.は使いません。</p>
-      <div class="picker-wrap"><canvas id="rowPickerCanvas" aria-label="勤務表の写真。自分の名前をタップしてください"></canvas><div id="tapGuide" class="tap-guide">↑ 自分の名前をタップ</div></div>
-      <p id="rowPickerStatus" class="muted">タップ位置を基準に、その右側の2便・3便だけを日付列へ対応させます。</p>
+      <div class="section-head"><h2>手動で位置を指定</h2><button id="closeRowPicker" class="secondary">閉じる</button></div>
+      <p id="pickerStep" class="picker-step">① 写真の中の自分の名前をタップしてください。</p>
+      <p class="muted">自動認識が失敗しても、この画面から続けられます。<strong>自分の名前</strong> → <strong>写真で一番左の最初の日付</strong>の順にタップしてください。No.は使いません。</p>
+      <div class="picker-wrap"><canvas id="rowPickerCanvas" aria-label="勤務表の写真。自分の名前と最初の日付を順にタップしてください"></canvas><div class="tap-guide">青①＝氏名　赤②＝最初の日付</div></div>
+      <div class="manual-date">
+        <label>タップした最初の日付
+          <input id="firstDateInput" type="number" min="1" max="31" inputmode="numeric" placeholder="例：11" disabled />
+        </label>
+      </div>
+      <div class="row">
+        <button id="resetManualPick" class="secondary">2点をやり直す</button>
+        <button id="runManualRead" class="accent" disabled>この位置で読み取る</button>
+      </div>
+      <p id="rowPickerStatus" class="muted">まず自分の名前をタップしてください。</p>
     </section>
 
     <section id="ocrPreview" class="card hidden">
@@ -78,6 +88,6 @@
   <footer>データはこのiPhone内（ブラウザのローカル保存）に保存されます。</footer>
 
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

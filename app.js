@@ -1,4 +1,4 @@
-const STORAGE='delivery-shift-pwa-v1';
+const STORAGE='delivery-shift-pwa-v2-date-aligned';
 const seeded={
   name:'竹谷 健',
   shifts:{
@@ -48,22 +48,71 @@ async function scan(file){
     const words=result.data.words||[]; const target=norm(data.name); const all=norm(result.data.text);
     if(target && !all.includes(target)){status.textContent=`「${data.name}」を明確に検出できませんでした。候補を確認してください。`}
     const parsed=parseTable(words,result.data.text);buildPreview(parsed);status.textContent='読取候補を作りました。数字を確認してから登録してください。';bar.style.width='100%';
-  }catch(e){console.error(e);status.textContent='読み取りに失敗しました。写真を明るく真上から撮って再試行してください。'}finally{setTimeout(()=>wrap.classList.add('hidden'),900)}
+  }catch(e){console.error(e);const msg={NAME_NOT_FOUND:'登録した氏名を画像内で確認できませんでした。氏名がはっきり写るように撮り直してください。',DATE_HEADER_NOT_FOUND:'日付の見出しを確認できませんでした。日付欄から氏名欄まで入るように真上から撮ってください。',COURSE_ROWS_NOT_FOUND:'本人の2便・3便の行を確実に特定できませんでした。誤登録を防ぐため登録していません。',NO_COURSES_MAPPED:'コース番号と日付の位置を対応できませんでした。誤登録を防ぐため登録していません。'};status.textContent=msg[e.message]||'読み取りに失敗しました。写真を明るく真上から撮って再試行してください。'}finally{setTimeout(()=>wrap.classList.add('hidden'),900)}
+}
+function centerX(w){return (w.bbox.x0+w.bbox.x1)/2}
+function centerY(w){return (w.bbox.y0+w.bbox.y1)/2}
+function digits(s){return (s||'').normalize('NFKC').replace(/[^0-9]/g,'')}
+function median(arr){const a=[...arr].sort((x,y)=>x-y);if(!a.length)return 0;const m=Math.floor(a.length/2);return a.length%2?a[m]:(a[m-1]+a[m])/2}
+function clusterByY(items,tol){const clusters=[];[...items].sort((a,b)=>centerY(a)-centerY(b)).forEach(w=>{const y=centerY(w);let c=clusters.find(c=>Math.abs(c.y-y)<=tol);if(!c){c={y,items:[]};clusters.push(c)}c.items.push(w);c.y=c.items.reduce((n,x)=>n+centerY(x),0)/c.items.length});return clusters}
+function findNameBox(words,target){
+  if(!target)return null;
+  // 1語で認識された場合
+  for(const w of words){if(norm(w.text).includes(target)||target.includes(norm(w.text))&&norm(w.text).length>=2)return w.bbox}
+  // 氏名が「竹谷」「健」など複数語に割れた場合、同じ行の近接語を連結して探す
+  const lines=clusterByY(words,18);
+  for(const line of lines){const row=[...line.items].sort((a,b)=>a.bbox.x0-b.bbox.x0);for(let i=0;i<row.length;i++){let joined='';let x0=row[i].bbox.x0,y0=row[i].bbox.y0,x1=row[i].bbox.x1,y1=row[i].bbox.y1;for(let j=i;j<Math.min(row.length,i+4);j++){joined+=norm(row[j].text);x1=Math.max(x1,row[j].bbox.x1);y0=Math.min(y0,row[j].bbox.y0);y1=Math.max(y1,row[j].bbox.y1);if(joined===target||joined.includes(target)){return{x0,y0,x1,y1}}}}
+  }
+  return null;
+}
+function findDateHeaders(words,nameY){
+  const dayWords=words.filter(w=>{const d=digits(w.text);const n=Number(d);return d.length<=2&&n>=1&&n<=31&&centerY(w)<nameY});
+  const clusters=clusterByY(dayWords,16).map(c=>({y:c.y,items:c.items.filter(w=>{const n=Number(digits(w.text));return n>=1&&n<=31})})).filter(c=>c.items.length>=3);
+  if(!clusters.length)return null;
+  // 日付は横一列に最も多く並ぶ。名前に近いことも加味。
+  clusters.sort((a,b)=>(b.items.length-a.items.length)||((nameY-b.y)-(nameY-a.y)));
+  const best=clusters[0];
+  const seen=new Map();
+  best.items.sort((a,b)=>centerX(a)-centerX(b)).forEach(w=>{const d=Number(digits(w.text));if(!seen.has(d))seen.set(d,centerX(w))});
+  if(seen.size<3)return null;
+  return [...seen.entries()].map(([day,x])=>({day,x})).sort((a,b)=>a.x-b.x);
+}
+function findCourseLines(words,nameBox){
+  const y=(nameBox.y0+nameBox.y1)/2;
+  const h=Math.max(18,nameBox.y1-nameBox.y0);
+  // 名前行の周辺だけを見る。別の従業員の行は対象外。
+  const nums=words.filter(w=>{const d=digits(w.text);const n=Number(d);const cy=centerY(w);return d.length===3&&n>=200&&n<=399&&Math.abs(cy-y)<=Math.max(90,h*3.2)});
+  const lines=clusterByY(nums,15).map(c=>({y:c.y,items:c.items}));
+  const seconds=lines.filter(l=>l.items.some(w=>{const n=Number(digits(w.text));return n>=200&&n<=299}));
+  const thirds=lines.filter(l=>l.items.some(w=>{const n=Number(digits(w.text));return n>=300&&n<=399}));
+  if(!seconds.length||!thirds.length)return null;
+  let best=null;
+  for(const a of seconds)for(const b of thirds){if(b.y<=a.y)continue;const dist=Math.abs(a.y-y)+Math.abs(b.y-y)+(b.y-a.y)*0.25;const count=a.items.length+b.items.length;if(!best||count>best.count||(count===best.count&&dist<best.dist))best={second:a,third:b,count,dist}}
+  return best;
+}
+function nearestDay(x,headers){
+  let best=null;for(const h of headers){const dist=Math.abs(h.x-x);if(!best||dist<best.dist)best={day:h.day,dist}}
+  const spacings=[];for(let i=1;i<headers.length;i++)spacings.push(headers[i].x-headers[i-1].x);const spacing=median(spacings)||80;
+  return best&&best.dist<=spacing*0.46?best.day:null;
 }
 function parseTable(words,text){
+  const target=norm(data.name);
+  const nameBox=findNameBox(words,target);
+  if(!nameBox)throw new Error('NAME_NOT_FOUND');
+  const nameY=(nameBox.y0+nameBox.y1)/2;
+  const headers=findDateHeaders(words,nameY);
+  if(!headers)throw new Error('DATE_HEADER_NOT_FOUND');
+  const lines=findCourseLines(words,nameBox);
+  if(!lines)throw new Error('COURSE_ROWS_NOT_FOUND');
   const out={};
-  // まずOCR文字列から3桁コース番号を拾う。表レイアウトが取れる場合は座標で2段に分ける。
-  const nums=words.filter(w=>/^\d{3}$/.test((w.text||'').trim()));
-  if(nums.length){
-    const ys=nums.map(w=>(w.bbox.y0+w.bbox.y1)/2).sort((a,b)=>a-b); const clusters=[];
-    ys.forEach(y=>{let c=clusters.find(c=>Math.abs(c.avg-y)<18);if(!c){c={avg:y,ys:[]};clusters.push(c)}c.ys.push(y);c.avg=c.ys.reduce((a,b)=>a+b,0)/c.ys.length});
-    // 最も多く3桁番号が並ぶ近接2行を2便/3便候補とする。
-    const lines=clusters.map(c=>({y:c.avg,items:nums.filter(w=>Math.abs(((w.bbox.y0+w.bbox.y1)/2)-c.avg)<18).sort((a,b)=>a.bbox.x0-b.bbox.x0)})).filter(l=>l.items.length>=2).sort((a,b)=>b.items.length-a.items.length);
-    if(lines.length>=2){const pair=lines.slice(0,5).sort((a,b)=>a.y-b.y);let best=null;for(let i=0;i<pair.length-1;i++){const score=Math.min(pair[i].items.length,pair[i+1].items.length);if(!best||score>best.score)best={a:pair[i],b:pair[i+1],score}};if(best){const a=best.a.items,b=best.b.items;const n=Math.min(31,Math.max(a.length,b.length));for(let i=0;i<n;i++){out[i+1]={second:a[i]?.text?.trim()||'',third:b[i]?.text?.trim()||''}};return out}}
-  }
-  // 座標解析が難しい場合は、出現順の3桁番号を2行として仮配置する（必ず確認画面を出す）。
-  const flat=(text.match(/\b\d{3}\b/g)||[]).slice(0,62);const half=Math.ceil(flat.length/2);for(let i=0;i<Math.min(31,half);i++)out[i+1]={second:flat[i]||'',third:flat[i+half]||''};return out;
+  for(const w of lines.second.items){const n=Number(digits(w.text));if(n<200||n>299)continue;const day=nearestDay(centerX(w),headers);if(day)out[day]={...(out[day]||{}),second:String(n)}}
+  for(const w of lines.third.items){const n=Number(digits(w.text));if(n<300||n>399)continue;const day=nearestDay(centerX(w),headers);if(day)out[day]={...(out[day]||{}),third:String(n)}}
+  // 2便・3便とも空白の列は休み候補。ただし、日付ヘッダーとして実際に検出できた日のみ。
+  for(const h of headers){if(!out[h.day])out[h.day]={off:true}}
+  if(!Object.values(out).some(r=>r.second||r.third))throw new Error('NO_COURSES_MAPPED');
+  return out;
 }
+
 el('photoInput').onchange=e=>{const f=e.target.files?.[0];if(f)scan(f);e.target.value=''};
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;el('installBtn').classList.remove('hidden')});
 el('installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}else{alert('iPhoneではSafariの共有ボタン →「ホーム画面に追加」を選んでください。')}};

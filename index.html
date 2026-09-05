@@ -52,7 +52,7 @@
 
     <section id="ocrPreview" class="card hidden">
       <div class="section-head"><h2>写真の読取候補</h2><button id="closePreview" class="secondary">閉じる</button></div>
-      <p class="muted">OCRは表の罫線で誤ることがあります。数字を確認・修正してから登録してください。</p>
+      <p class="muted">日付の列位置と本人の2便・3便を対応させた候補です。数字を確認してから登録してください。</p>
       <div class="table-scroll"><table><thead><tr><th>日</th><th>2便</th><th>3便</th><th>休み</th></tr></thead><tbody id="previewBody"></tbody></table></div>
       <button id="commitPreview" class="accent full">確認した内容をカレンダーへ登録</button>
     </section>
@@ -70,6 +70,6 @@
   <footer>データはこのiPhone内（ブラウザのローカル保存）に保存されます。</footer>
 
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=2"></script>
 </body>
 </html>

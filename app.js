@@ -44,6 +44,32 @@ function buildPreview(rows,meta={}){preview={};const body=el('previewBody');body
   el('ocrPreview').classList.remove('hidden');el('ocrPreview').scrollIntoView({behavior:'smooth'})}
 el('commitPreview').onclick=()=>{const y=view.getFullYear(),m=view.getMonth();for(const dStr of Object.keys(preview)){const d=Number(dStr),r=preview[d],k=key(y,m,d);if(r.off){data.shifts[k]={off:true}}else if(r.second||r.third){data.shifts[k]={second:r.second,third:r.third}}else{delete data.shifts[k]}}save();render();el('ocrPreview').classList.add('hidden');el('scanStatus').textContent='確認した勤務データを登録しました。出勤時間は登録済みのコース時間表から表示します。'};
 
+function showRowPicker(canvas){
+  const box=el('rowPicker'), out=el('rowPickerCanvas'), status=el('rowPickerStatus');
+  out.width=canvas.width; out.height=canvas.height;
+  const ctx=out.getContext('2d'); ctx.clearRect(0,0,out.width,out.height); ctx.drawImage(canvas,0,0);
+  status.textContent='写真の中の自分の名前を1回タップしてください。';
+  box.classList.remove('hidden'); box.scrollIntoView({behavior:'smooth',block:'start'});
+}
+el('closeRowPicker').onclick=()=>el('rowPicker').classList.add('hidden');
+el('rowPickerCanvas').addEventListener('click',e=>{
+  if(!lastOCR)return;
+  const canvas=el('rowPickerCanvas'), rect=canvas.getBoundingClientRect();
+  const x=(e.clientX-rect.left)*(canvas.width/rect.width), y=(e.clientY-rect.top)*(canvas.height/rect.height);
+  const status=el('rowPickerStatus');
+  try{
+    const parsed=parseTableFromTap(lastOCR.words,x,y);
+    buildPreview(parsed.rows,{nameMode:'名前をタップして指定'});
+    status.textContent='タップした行から候補を作成しました。内容を確認してください。';
+    el('rowPicker').classList.add('hidden');
+    el('scanStatus').textContent='名前をタップして本人行を指定しました。読み取り候補を確認してください。';
+  }catch(err){
+    console.error(err);
+    const msg={DATE_HEADER_NOT_FOUND:'日付欄を確認できません。日付見出しまで写るように撮り直してください。',COURSE_ROWS_NOT_FOUND:'タップ位置の右側に2便・3便を確認できませんでした。氏名の中央付近をタップしてください。',NO_COURSES_MAPPED:'コース番号を日付列に対応できませんでした。氏名をもう一度タップしてください。'};
+    status.textContent=msg[err.message]||'この位置では読み取れませんでした。自分の名前の中央付近をもう一度タップしてください。';
+  }
+});
+
 async function preprocess(file){
   const img=await createImageBitmap(file); const maxW=2200; const scale=Math.min(2.0,maxW/img.width); const w=Math.max(1,Math.round(img.width*scale)),h=Math.max(1,Math.round(img.height*scale));
   const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(img,0,0,w,h);
@@ -56,8 +82,17 @@ async function scan(file){
   try{
     const canvas=await preprocess(file);
     const result=await Tesseract.recognize(canvas,'jpn+eng',{logger:m=>{if(m.status==='recognizing text')bar.style.width=`${Math.max(5,Math.round(m.progress*100))}%`;status.textContent=`文字を読み取り中… ${Math.round((m.progress||0)*100)}%`}});
-    const words=result.data.words||[]; const parsed=parseTable(words,result.data.text); lastOCR={words,text:result.data.text,canvas}; buildPreview(parsed.rows,{nameMode:parsed.nameMode}); status.textContent='本人の行と日付列を対応させた候補を作りました。内容を確認してから登録してください。';bar.style.width='100%';
-  }catch(e){console.error(e);const msg={NAME_NOT_FOUND:'登録した氏名の行を安全に特定できませんでした。誤登録を防ぐため停止しました。名前がはっきり写るように、表全体を真上から撮影してください。',DATE_HEADER_NOT_FOUND:'日付の見出しを確認できませんでした。日付欄と氏名欄が両方入るように撮影してください。',COURSE_ROWS_NOT_FOUND:'本人の2便・3便の2行を特定できませんでした。誤登録を防ぐため停止しました。',NO_COURSES_MAPPED:'コース番号を日付の列位置に対応できませんでした。誤登録を防ぐため停止しました。'};status.textContent=msg[e.message]||'読み取りに失敗しました。写真を明るく真上から撮って再試行してください。'}finally{setTimeout(()=>wrap.classList.add('hidden'),900)}
+    const words=result.data.words||[]; lastOCR={words,text:result.data.text,canvas}; const parsed=parseTable(words,result.data.text); buildPreview(parsed.rows,{nameMode:parsed.nameMode}); status.textContent='本人の行と日付列を対応させた候補を作りました。内容を確認してから登録してください。';bar.style.width='100%';
+  }catch(e){
+    console.error(e);
+    if(e.message==='NAME_NOT_FOUND' && lastOCR?.canvas){
+      status.textContent='氏名を自動で確認できませんでした。写真の自分の名前を1回タップしてください。';
+      showRowPicker(lastOCR.canvas);
+    }else{
+      const msg={DATE_HEADER_NOT_FOUND:'日付の見出しを確認できませんでした。日付欄と氏名欄が両方入るように撮影してください。',COURSE_ROWS_NOT_FOUND:'本人の2便・3便の2行を特定できませんでした。誤登録を防ぐため停止しました。',NO_COURSES_MAPPED:'コース番号を日付の列位置に対応できませんでした。誤登録を防ぐため停止しました。'};
+      status.textContent=msg[e.message]||'読み取りに失敗しました。写真を明るく真上から撮って再試行してください。';
+    }
+  }finally{setTimeout(()=>wrap.classList.add('hidden'),900)}
 }
 function centerX(w){return (w.bbox.x0+w.bbox.x1)/2}
 function centerY(w){return (w.bbox.y0+w.bbox.y1)/2}
@@ -114,6 +149,18 @@ function findCourseLines(words,nameBox){
   return best;
 }
 function nearestDay(x,headers){let best=null;for(const h of headers){const dist=Math.abs(h.x-x);if(!best||dist<best.dist)best={day:h.day,dist}}const spacings=[];for(let i=1;i<headers.length;i++)spacings.push(headers[i].x-headers[i-1].x);const spacing=median(spacings)||80;return best&&best.dist<=spacing*.48?best.day:null}
+function parseTableFromTap(words,tapX,tapY){
+  const headers=findDateHeaders(words,tapY); if(!headers)throw new Error('DATE_HEADER_NOT_FOUND');
+  const fakeBox={x0:tapX,y0:tapY-18,x1:tapX+10,y1:tapY+18};
+  const lines=findCourseLines(words,fakeBox); if(!lines)throw new Error('COURSE_ROWS_NOT_FOUND');
+  const out={};
+  for(const w of lines.second.items){const n=Number(digits(w.text));if(n<200||n>299)continue;const day=nearestDay(centerX(w),headers);if(day)out[day]={...(out[day]||{}),second:String(n)}}
+  for(const w of lines.third.items){const n=Number(digits(w.text));if(n<300||n>399)continue;const day=nearestDay(centerX(w),headers);if(day)out[day]={...(out[day]||{}),third:String(n)}}
+  for(const h of headers){if(!out[h.day])out[h.day]={off:true}}
+  if(!Object.values(out).some(r=>r.second||r.third))throw new Error('NO_COURSES_MAPPED');
+  return {rows:out,nameMode:'tap'};
+}
+
 function parseTable(words,text){
   const found=findNameBox(words,data.name); if(!found)throw new Error('NAME_NOT_FOUND'); const nameBox=found.box,nameY=(nameBox.y0+nameBox.y1)/2;
   const headers=findDateHeaders(words,nameY); if(!headers)throw new Error('DATE_HEADER_NOT_FOUND'); const lines=findCourseLines(words,nameBox); if(!lines)throw new Error('COURSE_ROWS_NOT_FOUND');
@@ -126,5 +173,5 @@ function parseTable(words,text){
 el('photoInput').onchange=e=>{const f=e.target.files?.[0];if(f)scan(f);e.target.value=''};
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;el('installBtn').classList.remove('hidden')});
 el('installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}else{alert('iPhoneではSafariの共有ボタン →「ホーム画面に追加」を選んでください。')}};
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=3').catch(console.warn);
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=4').catch(console.warn);
 render();

@@ -50,6 +50,14 @@
       <div id="detail"></div>
     </section>
 
+
+    <section id="rowPicker" class="card hidden">
+      <div class="section-head"><h2>自分の名前の行を指定</h2><button id="closeRowPicker" class="secondary">閉じる</button></div>
+      <p class="muted">氏名を自動で見つけられなかった場合だけ使います。写真の中の<strong>自分の名前</strong>を1回タップしてください。No.は使いません。</p>
+      <div class="picker-wrap"><canvas id="rowPickerCanvas" aria-label="勤務表の写真。自分の名前をタップしてください"></canvas><div id="tapGuide" class="tap-guide">↑ 自分の名前をタップ</div></div>
+      <p id="rowPickerStatus" class="muted">タップ位置を基準に、その右側の2便・3便だけを日付列へ対応させます。</p>
+    </section>
+
     <section id="ocrPreview" class="card hidden">
       <div class="section-head"><h2>写真の読取候補</h2><button id="closePreview" class="secondary">閉じる</button></div>
       <p id="previewNote" class="muted">日付の列位置と本人の2便・3便を対応させた候補です。数字を確認してから登録してください。</p>
@@ -70,6 +78,6 @@
   <footer>データはこのiPhone内（ブラウザのローカル保存）に保存されます。</footer>
 
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

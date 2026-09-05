@@ -31,7 +31,7 @@
         <button id="openScanner" class="accent">勤務表を撮る / 選ぶ</button>
       </div>
       <input id="photoInput" type="file" accept="image/*" capture="environment" hidden />
-      <p id="scanStatus" class="muted">現在は9月1〜10日の勤務データを登録済みです。</p>
+      <p id="scanStatus" class="muted">氏名を基準に本人の2便・3便を探し、日付の列位置に合わせて読み取ります。No.は固定しません。</p>
       <div id="scanProgressWrap" class="progress-wrap hidden"><div id="scanProgress" class="progress"></div></div>
     </section>
 
@@ -52,7 +52,7 @@
 
     <section id="ocrPreview" class="card hidden">
       <div class="section-head"><h2>写真の読取候補</h2><button id="closePreview" class="secondary">閉じる</button></div>
-      <p class="muted">日付の列位置と本人の2便・3便を対応させた候補です。数字を確認してから登録してください。</p>
+      <p id="previewNote" class="muted">日付の列位置と本人の2便・3便を対応させた候補です。数字を確認してから登録してください。</p>
       <div class="table-scroll"><table><thead><tr><th>日</th><th>2便</th><th>3便</th><th>休み</th></tr></thead><tbody id="previewBody"></tbody></table></div>
       <button id="commitPreview" class="accent full">確認した内容をカレンダーへ登録</button>
     </section>
@@ -70,6 +70,6 @@
   <footer>データはこのiPhone内（ブラウザのローカル保存）に保存されます。</footer>
 
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

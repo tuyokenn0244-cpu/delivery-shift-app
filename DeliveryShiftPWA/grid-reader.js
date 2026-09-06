@@ -32,5 +32,18 @@ function cellImage(image,cell){
  }
  return {data,width,height};
 }
-root.ShiftGrid={locateGrid,cellImage};if(typeof module!=='undefined')module.exports=root.ShiftGrid;
+function isBlankCell(image,cell){
+ // Ignore the outer margin where grid lines or the printed footer can intrude.
+ const values=[],mx=Math.max(2,Math.floor(cell.width*.1)),my=Math.max(2,Math.floor(cell.height*.16));
+ for(let y=cell.top+my;y<cell.top+cell.height-my;y++)for(let x=cell.left+mx;x<cell.left+cell.width-mx;x++){const i=(y*image.width+x)*4;values.push(image.data[i]*.299+image.data[i+1]*.587+image.data[i+2]*.114)}
+ if(values.length<100)return false;
+ values.sort((a,b)=>a-b);const background=values[Math.floor(values.length*.65)];
+ if(background<75)return false;
+ return values.filter(v=>v<background-35).length/values.length<.005;
+}
+function applyBlankDays(rows,evidence){
+ for(const day of Object.keys(rows)){const cells=evidence.filter(c=>String(c.day)===day);if(cells.length===2&&cells.some(c=>c.type==='second')&&cells.some(c=>c.type==='third')&&cells.every(c=>c.blank&&c.raw==='')&&!rows[day].second&&!rows[day].third)rows[day].off=true}
+ return rows;
+}
+root.ShiftGrid={locateGrid,cellImage,isBlankCell,applyBlankDays};if(typeof module!=='undefined')module.exports=root.ShiftGrid;
 })(typeof globalThis!=='undefined'?globalThis:this);

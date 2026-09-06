@@ -62,7 +62,7 @@ function buildPreview(rows,meta={}){
     tr.innerHTML=`<td>${d}</td><td><input aria-label="${d}日 2便" data-k="second" list="knownCourses" inputmode="numeric" maxlength="3" value="${esc(preview[d].second)}"></td><td><input aria-label="${d}日 3便" data-k="third" inputmode="numeric" maxlength="3" value="${esc(preview[d].third)}"></td><td><input aria-label="${d}日 休み" data-k="off" type="checkbox" ${r.off?'checked':''}></td>`;
     tr.querySelectorAll('input').forEach(i=>i.oninput=()=>{if(i.dataset.k==='off')preview[d].off=i.checked;else {i.value=i.value.replace(/\D/g,'').slice(0,3);preview[d][i.dataset.k]=i.value}});body.appendChild(tr);
   }
-  el('previewNote').textContent=`登録先：${y}年${m}月。${meta.nameMode||'手入力'}。空欄は未読取です。休みは自分でチェックしてください。空欄の既存データは変更しません。`;
+  el('previewNote').textContent=`登録先：${y}年${m}月。${meta.nameMode||'手入力'}。${meta.autoOff?'2便・3便とも写真の空欄を確認できた日は休みにチェック済みです。原本と照合してください。':'休みの日にチェックしてください。'}未読取の空欄は既存データを変更しません。`;
   el('ocrPreview').classList.remove('hidden');el('ocrPreview').scrollIntoView({behavior:'smooth'});
 }
 el('manualEntry').onclick=()=>{const ym=el('shiftMonth').value;if(!ym)return;const [y,m]=ym.split('-').map(Number);const rows={};for(let d=1;d<=new Date(y,m,0).getDate();d++)rows[d]={};buildPreview(rows)};
@@ -143,11 +143,12 @@ el('runManualRead').onclick=async()=>{
    const crop=ShiftGrid.cellImage(pixels,c),part=document.createElement('canvas');part.width=crop.width;part.height=crop.height;part.getContext('2d').putImageData(new ImageData(crop.data,crop.width,crop.height),0,0);
    const result=await worker.recognize(part),value=result.data.text.trim(),valid=(c.type==='second'?/^2\d{2}$/:/^3\d{2}$/).test(value);
    rows[c.day]??={};if(valid)rows[c.day][c.type]=value;
-   snippets.push({day:c.day,type:c.type,url:part.toDataURL('image/png'),confidence:result.data.confidence,value:valid?value:''});bar.style.width=`${Math.round((i+1)/grid.cells.length*100)}%`;
+   snippets.push({day:c.day,type:c.type,blank:ShiftGrid.isBlankCell(pixels,c),raw:value,url:part.toDataURL('image/png'),confidence:result.data.confidence,value:valid?value:''});bar.style.width=`${Math.round((i+1)/grid.cells.length*100)}%`;
   }
-  buildPreview(rows,{nameMode:'枠線で1マスずつ読取。入力欄の下に元のマスを表示'});
-  const trs=[...el('previewBody').children];for(const item of snippets){const tr=trs.find(t=>Number(t.firstChild.textContent)===item.day);if(!tr)continue;const input=tr.querySelector(`[data-k="${item.type}"]`);const img=document.createElement('img');img.src=item.url;img.alt=`${item.day}日 ${item.type==='second'?'2便':'3便'} 原本`;img.className='cell-source';input.parentElement.appendChild(img);if(!item.value||item.confidence<85){input.classList.add('needs-review');input.title='元のマスと照合してください'}}
-  el('rowPicker').classList.add('hidden');el('scanStatus').textContent='読み取り候補と元のマスを照合してください。空欄は休みと決めつけず、確認してチェックしてください。';
+  ShiftGrid.applyBlankDays(rows,snippets);
+  buildPreview(rows,{autoOff:true,nameMode:'枠線で1マスずつ読取。入力欄の下に元のマスを表示'});
+  const trs=[...el('previewBody').children];for(const item of snippets){const tr=trs.find(t=>Number(t.firstChild.textContent)===item.day);if(!tr)continue;const input=tr.querySelector(`[data-k="${item.type}"]`);const img=document.createElement('img');img.src=item.url;img.alt=`${item.day}日 ${item.type==='second'?'2便':'3便'} 原本`;img.className='cell-source';input.parentElement.appendChild(img);if(!rows[item.day].off&&(!item.value||item.confidence<85)){input.classList.add('needs-review');input.title='元のマスと照合してください'}}
+  el('rowPicker').classList.add('hidden');el('scanStatus').textContent='読み取り候補と元のマスを照合してください。写真で2便・3便とも空欄の休み候補にチェックしました。原本と照合してから登録してください。';
  }catch(e){
   const errors={ROW_GRID_NOT_FOUND:'氏名の上下の枠線を確認できません。名前の中央を指定し直してください。',COLUMN_GRID_NOT_FOUND:'指定した日数分の列を確認できません。最初の日付の位置と、最初・最後の日付を確認してください。',OCR_UNAVAILABLE:'文字読み取りのファイルを読み込めません。アップロード内容と通信状態を確認してください。'};
   status.textContent=errors[e.message]||'読み取りを完了できませんでした。通信状態を確認して再実行するか、手入力で続けてください。';
@@ -156,5 +157,5 @@ el('runManualRead').onclick=async()=>{
 el('photoInput').onchange=e=>{const f=e.target.files?.[0];if(f)scan(f);e.target.value=''};
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;el('installBtn').classList.remove('hidden')});
 el('installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}};
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=9').catch(console.warn);
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=10').catch(console.warn);
 render();

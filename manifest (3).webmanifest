@@ -1,0 +1,13 @@
+{
+  "name":"配送シフト",
+  "short_name":"配送シフト",
+  "description":"勤務表の写真から配送コースを確認し、出勤時間と一緒にカレンダー表示する自分用PWA",
+  "start_url":"./",
+  "display":"standalone",
+  "background_color":"#f1f5f9",
+  "theme_color":"#0f172a",
+  "icons":[
+    {"src":"icons/icon-192.png","sizes":"192x192","type":"image/png"},
+    {"src":"icons/icon-512.png","sizes":"512x512","type":"image/png"}
+  ]
+}

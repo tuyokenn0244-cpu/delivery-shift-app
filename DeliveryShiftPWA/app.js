@@ -6,12 +6,23 @@ const seeded={
     '2026-09-04':{second:'204',third:'315'},'2026-09-05':{second:'224',third:'307'},'2026-09-06':{second:'205',third:'317'},
     '2026-09-07':{off:true},'2026-09-08':{second:'214',third:'313'},'2026-09-09':{second:'221',third:'302'},'2026-09-10':{off:true}
   },
-  timeMap:{'204':'6:05〜6:15','205':'6:05〜6:15','208':'6:05〜6:15','214':'6:05〜6:15','213':'6:20〜6:30','221':'6:20〜6:30','224':'6:35〜6:45'}
+  timeMapVersion:"2026-09-01-complete",
+  timeMap:{"201": "6:05〜6:15", "202": "6:05〜6:15", "204": "6:05〜6:15", "205": "6:05〜6:15", "206": "6:05〜6:15", "207": "6:05〜6:15", "208": "6:05〜6:15", "209": "6:05〜6:15", "210": "6:05〜6:15", "211": "6:05〜6:15", "214": "6:05〜6:15", "216": "6:05〜6:15", "203": "6:20〜6:30", "212": "6:20〜6:30", "213": "6:20〜6:30", "215": "6:20〜6:30", "217": "6:20〜6:30", "219": "6:20〜6:30", "221": "6:20〜6:30", "222": "6:20〜6:30", "218": "6:35〜6:45", "220": "6:35〜6:45", "223": "6:35〜6:45", "224": "6:35〜6:45", "225": "6:35〜6:45", "226": "6:35〜6:45"}
 };
 let data=load(); const today=new Date(); let view=new Date(today.getFullYear(),today.getMonth(),1); let selected=key(today.getFullYear(),today.getMonth(),today.getDate()); let previewMonth=null; let scanning=false; let preview={}; let deferredPrompt=null;
 let lastOCR=null; let manualPick={nameX:null,nameY:null,dateX:null,dateY:null,firstDate:null};
 function cloneSeed(){return JSON.parse(JSON.stringify(seeded))}
-function load(){try{const x=JSON.parse(localStorage.getItem(STORAGE));return x?{...seeded,...x,shifts:x.shifts||{},timeMap:x.timeMap||{}}:cloneSeed()}catch{return cloneSeed()}}
+function load(){
+ let x;try{x=JSON.parse(localStorage.getItem(STORAGE))}catch{}
+ if(!x)return cloneSeed();
+ const loaded={...seeded,...x,shifts:x.shifts||{},timeMap:x.timeMap||{}};
+ // Apply the supplied September table once, including already-installed apps.
+ if(x.timeMapVersion!==seeded.timeMapVersion){
+  loaded.timeMap={...loaded.timeMap,...seeded.timeMap};loaded.timeMapVersion=seeded.timeMapVersion;
+  try{localStorage.setItem(STORAGE,JSON.stringify(loaded))}catch{}
+ }
+ return loaded;
+}
 function save(){localStorage.setItem(STORAGE,JSON.stringify(data))}
 function pad(n){return String(n).padStart(2,'0')} function key(y,m,d){return `${y}-${pad(m+1)}-${pad(d)}`}
 function norm(s){return (s||'').normalize('NFKC').replace(/[\s　・･.。,:：;；()（）\[\]【】]/g,'')}
@@ -31,7 +42,7 @@ function renderDetail(){const s=data.shifts[selected],d=new Date(selected+'T00:0
   if(s.off){el('detail').innerHTML=`<b>${title}</b><div class="off">休み</div>`;return}
   const t=data.timeMap[s.second]||'時間未設定';el('detail').innerHTML=`<b>${title}</b><div class="detail-grid"><div class="pill"><div class="label">2便</div><div class="value">${esc(s.second||'—')}</div></div><div class="pill"><div class="label">3便</div><div class="value">${esc(s.third||'—')}</div></div></div><div class="bigtime">出勤時間：${esc(t)}</div>`
 }
-function renderMap(){const box=el('timeMap');box.innerHTML='';Object.keys(data.timeMap).sort().forEach(course=>{const r=document.createElement('div');r.className='map-row';r.innerHTML=`<b>${esc(course)}</b><input value="${esc(data.timeMap[course])}"><button>削除</button>`;const inp=r.querySelector('input');inp.onchange=()=>{data.timeMap[course]=inp.value;save();render()};r.querySelector('button').onclick=()=>{delete data.timeMap[course];save();render()};box.appendChild(r)})}
+function renderMap(){const list=el('knownCourses');list.innerHTML='';Object.keys(data.timeMap).sort().forEach(c=>{const option=document.createElement('option');option.value=c;option.label=data.timeMap[c];list.appendChild(option)});const box=el('timeMap');box.innerHTML='';Object.keys(data.timeMap).sort().forEach(course=>{const r=document.createElement('div');r.className='map-row';r.innerHTML=`<b>${esc(course)}</b><input value="${esc(data.timeMap[course])}"><button>削除</button>`;const inp=r.querySelector('input');inp.onchange=()=>{data.timeMap[course]=inp.value;save();render()};r.querySelector('button').onclick=()=>{delete data.timeMap[course];save();render()};box.appendChild(r)})}
 el('saveName').onclick=()=>{data.name=el('workerName').value.trim();save();render();el('scanStatus').textContent='氏名を保存しました。空白の違いは無視して照合します。'};
 el('workerName').value=data.name;el('shiftMonth').value=`${view.getFullYear()}-${pad(view.getMonth()+1)}`;
 el('prevMonth').onclick=()=>{view=new Date(view.getFullYear(),view.getMonth()-1,1);selected=key(view.getFullYear(),view.getMonth(),1);render()};
@@ -48,7 +59,7 @@ function buildPreview(rows,meta={}){
     if(d<1||d>last)continue;
     const r=rows[d]||{};preview[d]={second:r.second||'',third:r.third||'',off:!!r.off};
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${d}</td><td><input aria-label="${d}日 2便" data-k="second" inputmode="numeric" maxlength="3" value="${esc(preview[d].second)}"></td><td><input aria-label="${d}日 3便" data-k="third" inputmode="numeric" maxlength="3" value="${esc(preview[d].third)}"></td><td><input aria-label="${d}日 休み" data-k="off" type="checkbox" ${r.off?'checked':''}></td>`;
+    tr.innerHTML=`<td>${d}</td><td><input aria-label="${d}日 2便" data-k="second" list="knownCourses" inputmode="numeric" maxlength="3" value="${esc(preview[d].second)}"></td><td><input aria-label="${d}日 3便" data-k="third" inputmode="numeric" maxlength="3" value="${esc(preview[d].third)}"></td><td><input aria-label="${d}日 休み" data-k="off" type="checkbox" ${r.off?'checked':''}></td>`;
     tr.querySelectorAll('input').forEach(i=>i.oninput=()=>{if(i.dataset.k==='off')preview[d].off=i.checked;else {i.value=i.value.replace(/\D/g,'').slice(0,3);preview[d][i.dataset.k]=i.value}});body.appendChild(tr);
   }
   el('previewNote').textContent=`登録先：${y}年${m}月。${meta.nameMode||'手入力'}。空欄は未読取です。休みは自分でチェックしてください。空欄の既存データは変更しません。`;
@@ -70,205 +81,80 @@ el('commitPreview').onclick=()=>{
   render();el('ocrPreview').classList.add('hidden');el('scanStatus').textContent=`${count}日分を${y}年${m}月に登録しました。`;
 };
 
-function showManualPicker(canvas,reason='自動認識が不安定でした。'){
-  const box=el('rowPicker'), out=el('rowPickerCanvas'), status=el('rowPickerStatus'), step=el('pickerStep'), firstDate=el('firstDateInput'), runBtn=el('runManualRead');
-  manualPick={nameX:null,nameY:null,dateX:null,dateY:null,firstDate:null};
-  out.width=canvas.width; out.height=canvas.height;
-  const ctx=out.getContext('2d'); ctx.clearRect(0,0,out.width,out.height); ctx.drawImage(canvas,0,0);
-  step.textContent='① 写真の中の自分の名前をタップしてください。';
-  status.textContent=reason+' 写真上で「自分の名前」→「最初の日付」の順にタップします。';
-  firstDate.value=''; firstDate.disabled=true; runBtn.disabled=true;
-  box.classList.remove('hidden'); box.scrollIntoView({behavior:'smooth',block:'start'});
-  drawPickerMarks();
-}
-function drawPickerMarks(){
-  if(!lastOCR?.canvas)return;
-  const out=el('rowPickerCanvas'), ctx=out.getContext('2d');
-  ctx.clearRect(0,0,out.width,out.height); ctx.drawImage(lastOCR.canvas,0,0);
-  ctx.save(); ctx.lineWidth=Math.max(4,out.width/500); ctx.font=`${Math.max(26,out.width/32)}px sans-serif`;
-  if(manualPick.nameX!=null){ctx.strokeStyle='#2563eb';ctx.fillStyle='#2563eb';ctx.beginPath();ctx.arc(manualPick.nameX,manualPick.nameY,Math.max(14,out.width/70),0,Math.PI*2);ctx.stroke();ctx.fillText('①',manualPick.nameX+18,manualPick.nameY-12)}
-  if(manualPick.dateX!=null){ctx.strokeStyle='#dc2626';ctx.fillStyle='#dc2626';ctx.beginPath();ctx.arc(manualPick.dateX,manualPick.dateY,Math.max(14,out.width/70),0,Math.PI*2);ctx.stroke();ctx.fillText('②',manualPick.dateX+18,manualPick.dateY-12)}
-  ctx.restore();
-}
-function nearestRecognizedDay(words,x,y){
-  let best=null;
-  for(const w of words){const d=digits(w.text),n=Number(d);if(!d||d.length>2||n<1||n>31)continue;const dx=centerX(w)-x,dy=centerY(w)-y,dist=Math.hypot(dx,dy*1.5);if(!best||dist<best.dist)best={day:n,dist,w}}
-  return best&&best.dist<Math.max(90,lastOCR?.canvas?.width*0.06||90)?best.day:null;
-}
-function clusterByX(items,tol){
-  const clusters=[];[...items].sort((a,b)=>centerX(a)-centerX(b)).forEach(w=>{const x=centerX(w);let c=clusters.find(c=>Math.abs(c.x-x)<=tol);if(!c){c={x,items:[]};clusters.push(c)}c.items.push(w);c.x=c.items.reduce((n,z)=>n+centerX(z),0)/c.items.length});return clusters;
-}
-function findTableColumns(words,minX){
-  const nums=words.filter(w=>{const d=digits(w.text),n=Number(d);return d.length===3&&n>=200&&n<=399&&centerX(w)>minX});
-  if(nums.length<6)return null;
-  const widths=nums.map(w=>Math.max(1,w.bbox.x1-w.bbox.x0)); const tol=Math.max(16,median(widths)*0.8);
-  let clusters=clusterByX(nums,tol).filter(c=>c.items.length>=2).sort((a,b)=>a.x-b.x);
-  if(clusters.length<4){clusters=clusterByX(nums,tol*1.35).filter(c=>c.items.length>=2).sort((a,b)=>a.x-b.x)}
-  return clusters.length>=4?clusters:null;
-}
-function nearestColumnIndex(x,cols){let best=null;cols.forEach((c,i)=>{const d=Math.abs(c.x-x);if(!best||d<best.d)best={i,d}});const gaps=[];for(let i=1;i<cols.length;i++)gaps.push(cols[i].x-cols[i-1].x);const spacing=median(gaps)||90;return best&&best.d<=spacing*.62?best.i:null}
-function parseTableFromTwoTaps(words,nameX,nameY,dateX,firstDay){
-  if(!(firstDay>=1&&firstDay<=31))throw new Error('FIRST_DATE_REQUIRED');
-  const fakeBox={x0:nameX,y0:nameY-20,x1:nameX+12,y1:nameY+20};
-  const lines=findCourseLines(words,fakeBox); if(!lines)throw new Error('COURSE_ROWS_NOT_FOUND');
-  const headers=findDateHeaders(words,nameY);if(!headers)throw new Error('COLUMN_GRID_NOT_FOUND');
-  if(nearestDay(dateX,headers)!==firstDay)throw new Error('DATE_COLUMN_NOT_FOUND');
-  const out={};for(const h of headers)out[h.day]={};
-  for(const [line,type,min,max] of [[lines.second,'second',200,299],[lines.third,'third',300,399]])for(const w of line.items){const n=Number(digits(w.text)),day=nearestDay(centerX(w),headers);if(day&&n>=min&&n<=max)out[day][type]=String(n)}
-  if(!Object.values(out).some(r=>r.second||r.third))throw new Error('NO_COURSES_MAPPED');
-  return {rows:out,nameMode:'2点タップ指定'};
-}
-el('closeRowPicker').onclick=()=>el('rowPicker').classList.add('hidden');
-el('rowPickerCanvas').addEventListener('click',e=>{
-  if(!lastOCR||scanning)return;
-  const canvas=el('rowPickerCanvas'), rect=canvas.getBoundingClientRect();
-  const x=(e.clientX-rect.left)*(canvas.width/rect.width), y=(e.clientY-rect.top)*(canvas.height/rect.height);
-  const step=el('pickerStep'),status=el('rowPickerStatus'),firstDate=el('firstDateInput'),runBtn=el('runManualRead');
-  if(manualPick.nameX==null){
-    manualPick.nameX=x;manualPick.nameY=y;step.textContent='② 次に、表の上にある「最初の日付」をタップしてください。';status.textContent='名前の位置を保存しました。次は、その写真で一番左に表示されている日付（例：11）をタップしてください。';
-  }else if(manualPick.dateX==null){
-    manualPick.dateX=x;manualPick.dateY=y;const guessed=null;manualPick.firstDate=null;firstDate.value='';firstDate.disabled=false;runBtn.disabled=true;step.textContent='③ 日付を確認して「この位置で読み取る」を押してください。';status.textContent=guessed?`日付「${guessed}」付近を指定しました。数字が合っているか確認してください。`:'写真に書かれた日付を下に入力してください。例：11日なら11。自動では入力しません。';
-  }else{
-    // やり直したい場合は日付タップを更新
-    manualPick.dateX=x;manualPick.dateY=y;manualPick.firstDate=null;firstDate.value='';runBtn.disabled=true;status.textContent='日付位置を更新しました。写真の日付を下に入力してください。';
-  }
-  drawPickerMarks();
-});
-el('resetManualPick').onclick=()=>{if(lastOCR?.canvas)showManualPicker(lastOCR.canvas,'指定をやり直します。')};
-el('firstDateInput').addEventListener('input',e=>{const n=Number(e.target.value);manualPick.firstDate=(n>=1&&n<=31)?n:null;el('runManualRead').disabled=!manualPick.firstDate||manualPick.dateX==null||manualPick.nameX==null});
-// Re-read a magnified horizontal band instead of reusing failed full-page OCR.
-function remapCropWords(words,x0,y0,scale){return words.map(w=>({...w,bbox:{x0:w.bbox.x0/scale+x0,x1:w.bbox.x1/scale+x0,y0:w.bbox.y0/scale+y0,y1:w.bbox.y1/scale+y0}}))}
-async function recognizeBand(source,cy,left){
-  const margin=Math.max(20,source.width*.035),x0=Math.max(0,Math.floor(left)),y0=Math.max(0,Math.floor(cy-margin));
-  const width=source.width-x0,height=Math.min(source.height,Math.ceil(cy+margin))-y0;
-  const scale=Math.min(3,3600/width),crop=document.createElement('canvas');crop.width=Math.round(width*scale);crop.height=Math.round(height*scale);
-  crop.getContext('2d').drawImage(source,x0,y0,width,height,0,0,crop.width,crop.height);
-  const result=await Tesseract.recognize(crop,'eng');
-  return remapCropWords(result.data.words||[],x0,y0,scale);
-}
-el('runManualRead').onclick=async()=>{
-  if(scanning||!lastOCR?.canvas)return;
-  const status=el('rowPickerStatus'),firstDay=Number(el('firstDateInput').value);
-  if(!Number.isInteger(firstDay)||firstDay<1||firstDay>31){status.textContent='写真に書かれた日付を1〜31で入力してください。';return}
-  scanning=true;const controls=['runManualRead','openScanner','manualEntry','shiftMonth','firstDateInput','resetManualPick','closeRowPicker'];controls.forEach(id=>el(id).disabled=true);
-  const pick={...manualPick},source=lastOCR.canvas;
-  try{
-    if(!window.Tesseract)throw new Error('OCR_UNAVAILABLE');
-    status.textContent='名前の右側を拡大して、2便・3便を読み直しています…';
-    const rowWords=await recognizeBand(source,pick.nameY,pick.nameX);
-    status.textContent='日付の見出しを拡大して読み直しています…';
-    const headerWords=await recognizeBand(source,pick.dateY,pick.dateX-source.width*.02);
-    const parsed=parseTableFromTwoTaps([...rowWords,...headerWords],pick.nameX,pick.nameY,pick.dateX,firstDay);
-    buildPreview(parsed.rows,{nameMode:'指定した行と日付を拡大して再読取'});
-    el('rowPicker').classList.add('hidden');el('scanStatus').textContent='拡大して読み直した候補です。写真と照合してから登録してください。';
-  }catch(err){
-    const msg={COURSE_ROWS_NOT_FOUND:'拡大しても2便・3便を確認できませんでした。',COLUMN_GRID_NOT_FOUND:'日付の見出しを確認できませんでした。',DATE_COLUMN_NOT_FOUND:'入力した日付と写真の列が一致しません。写真で11日をタップした場合は11を入力してください。',NO_COURSES_MAPPED:'コースと日付を対応できませんでした。',OCR_UNAVAILABLE:'文字の読み取り機能を利用できません。通信状態を確認してください。'};
-    status.textContent=(msg[err.message]||'拡大した画像を読み取れませんでした。')+' 写真を確認し、難しい場合は下の「手入力で続ける」を使ってください。';
-    el('pickerManualEntry').classList.remove('hidden');
-  }finally{scanning=false;controls.forEach(id=>el(id).disabled=false)}
-};
-el('pickerManualEntry').onclick=()=>el('manualEntry').onclick();
 
+function showManualPicker(canvas){
+ manualPick={nameX:null,nameY:null,dateX:null,dateY:null,firstDate:null,lastDate:null};
+ const out=el('rowPickerCanvas');out.width=canvas.width;out.height=canvas.height;
+ el('firstDateInput').value='';el('lastDateInput').value='';el('firstDateInput').disabled=true;el('lastDateInput').disabled=true;
+ el('runManualRead').disabled=true;el('pickerStep').textContent='① 写真の中の自分の名前の中央をタップしてください。';
+ el('rowPickerStatus').textContent='氏名の位置から本人の枠を探します。No.は固定しません。';
+ el('rowPicker').classList.remove('hidden');el('ocrPreview').classList.add('hidden');drawPickerMarks();el('rowPicker').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function drawPickerMarks(grid){
+ if(!lastOCR?.canvas)return;const out=el('rowPickerCanvas'),ctx=out.getContext('2d');ctx.drawImage(lastOCR.canvas,0,0);
+ ctx.lineWidth=Math.max(2,out.width/500);ctx.font=`${Math.max(24,out.width/35)}px sans-serif`;
+ for(const [x,y,label,color] of [[manualPick.nameX,manualPick.nameY,'①','#2563eb'],[manualPick.dateX,manualPick.dateY,'②','#dc2626']]){if(x==null)continue;ctx.strokeStyle=color;ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,out.width/65,0,Math.PI*2);ctx.stroke();ctx.fillText(label,x+15,y-10)}
+ if(grid){ctx.strokeStyle='#16a34a';for(const c of grid.cells)ctx.strokeRect(c.left,c.top,c.width,c.height)}
+}
+function updateReadButton(){
+ const a=Number(el('firstDateInput').value),b=Number(el('lastDateInput').value),ym=el('shiftMonth').value;
+ const [y,m]=ym.split('-').map(Number),limit=new Date(y,m,0).getDate();
+ manualPick.firstDate=a;manualPick.lastDate=b;
+ el('runManualRead').disabled=scanning||manualPick.dateX==null||!Number.isInteger(a)||!Number.isInteger(b)||a<1||b<a||b>limit;
+}
+el('rowPickerCanvas').addEventListener('click',e=>{
+ if(!lastOCR||scanning)return;const c=el('rowPickerCanvas'),r=c.getBoundingClientRect();const x=(e.clientX-r.left)*c.width/r.width,y=(e.clientY-r.top)*c.height/r.height;
+ if(manualPick.nameX==null){manualPick.nameX=x;manualPick.nameY=y;el('pickerStep').textContent='② 写真の一番左の日付をタップしてください。'}
+ else{manualPick.dateX=x;manualPick.dateY=y;el('firstDateInput').disabled=false;el('lastDateInput').disabled=false;el('pickerStep').textContent='③ 写真の最初と最後の日付を入力してください。';el('rowPickerStatus').textContent='11〜20日の写真なら「11」と「20」を入力します。日付の文字認識は使いません。'}
+ drawPickerMarks();updateReadButton();
+});
+el('firstDateInput').oninput=updateReadButton;el('lastDateInput').oninput=updateReadButton;el('shiftMonth').onchange=updateReadButton;
+el('resetManualPick').onclick=()=>{if(lastOCR&&!scanning)showManualPicker(lastOCR.canvas)};
+el('closeRowPicker').onclick=()=>el('rowPicker').classList.add('hidden');
+el('pickerManualEntry').onclick=()=>{el('rowPicker').classList.add('hidden');el('manualEntry').onclick()};
+function setReading(busy){
+ scanning=busy;for(const id of ['openScanner','manualEntry','shiftMonth','firstDateInput','lastDateInput','resetManualPick','closeRowPicker','pickerManualEntry','runManualRead'])el(id).disabled=busy;
+ if(!busy)updateReadButton();
+}
 async function preprocess(file){
-  const img=await createImageBitmap(file); const maxW=2200; const scale=Math.min(2.0,maxW/img.width); const w=Math.max(1,Math.round(img.width*scale)),h=Math.max(1,Math.round(img.height*scale));
-  const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(img,0,0,w,h);
-  const im=ctx.getImageData(0,0,w,h),p=im.data; for(let i=0;i<p.length;i+=4){const g=Math.round(0.299*p[i]+0.587*p[i+1]+0.114*p[i+2]);const v=g<205?Math.max(0,(g-128)*1.45+128):Math.min(255,(g-128)*1.18+128);p[i]=p[i+1]=p[i+2]=v} ctx.putImageData(im,0,0); return canvas;
+ const img=await createImageBitmap(file),scale=Math.min(1,1800/img.width);const canvas=document.createElement('canvas');canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);
+ canvas.getContext('2d',{willReadFrequently:true}).drawImage(img,0,0,canvas.width,canvas.height);img.close();return canvas;
 }
 async function scan(file){
-  if(scanning)return;scanning=true;lastOCR=null;
-  const status=el('scanStatus'),wrap=el('scanProgressWrap'),bar=el('scanProgress');
-  el('openScanner').disabled=true;el('shiftMonth').disabled=true;el('manualEntry').disabled=true;
-  el('ocrPreview').classList.add('hidden');el('rowPicker').classList.add('hidden');wrap.classList.remove('hidden');bar.style.width='2%';
-  try{
-    status.textContent='写真を読み込んでいます…';const canvas=await preprocess(file);lastOCR={words:[],canvas};
-    if(!window.Tesseract)throw new Error('OCR_UNAVAILABLE');
-    const result=await Tesseract.recognize(canvas,'jpn+eng',{logger:m=>{if(m.status==='recognizing text'){bar.style.width=`${Math.max(5,Math.round(m.progress*100))}%`;status.textContent=`文字を読み取り中… ${Math.round(m.progress*100)}%`}}});
-    lastOCR={words:result.data.words||[],text:result.data.text,canvas};
-    const parsed=parseTable(lastOCR.words,lastOCR.text);buildPreview(parsed.rows,{nameMode:parsed.nameMode});status.textContent='読取候補を確認してください。未読取の空欄は休みと判定しません。';
-  }catch(e){
-    if(lastOCR?.words.length){showManualPicker(lastOCR.canvas,'自動で本人行・日付を確認できませんでした。');status.textContent='写真の位置を指定するか、「手入力で登録」から続けてください。'}
-    else{status.textContent='文字を読み取れませんでした。通信状態や画像形式を確認するか、「手入力で登録」から続けてください。'}
-  }finally{scanning=false;el('openScanner').disabled=false;el('shiftMonth').disabled=false;el('manualEntry').disabled=false;wrap.classList.add('hidden')}
+ if(scanning)return;setReading(true);lastOCR=null;el('ocrPreview').classList.add('hidden');el('rowPicker').classList.add('hidden');
+ try{el('scanStatus').textContent='写真を表示しています…';const canvas=await preprocess(file);lastOCR={canvas};showManualPicker(canvas);el('scanStatus').textContent='写真の氏名と一番左の日付を指定してください。'}
+ catch{el('scanStatus').textContent='写真を開けませんでした。JPEG・PNGの写真を選び直してください。'}
+ finally{setReading(false);el('firstDateInput').disabled=manualPick.dateX==null;el('lastDateInput').disabled=manualPick.dateX==null}
 }
-
-function centerX(w){return (w.bbox.x0+w.bbox.x1)/2}
-function centerY(w){return (w.bbox.y0+w.bbox.y1)/2}
-function digits(s){return (s||'').normalize('NFKC').replace(/[^0-9]/g,'')}
-function median(arr){const a=[...arr].sort((x,y)=>x-y);if(!a.length)return 0;const m=Math.floor(a.length/2);return a.length%2?a[m]:(a[m-1]+a[m])/2}
-function clusterByY(items,tol){const clusters=[];[...items].sort((a,b)=>centerY(a)-centerY(b)).forEach(w=>{const y=centerY(w);let c=clusters.find(c=>Math.abs(c.y-y)<=tol);if(!c){c={y,items:[]};clusters.push(c)}c.items.push(w);c.y=c.items.reduce((n,x)=>n+centerY(x),0)/c.items.length});return clusters}
-function levenshtein(a,b){a=norm(a);b=norm(b);if(!a.length)return b.length;if(!b.length)return a.length;const v=Array(b.length+1).fill(0).map((_,i)=>i);for(let i=1;i<=a.length;i++){let prev=v[0];v[0]=i;for(let j=1;j<=b.length;j++){const old=v[j];v[j]=Math.min(v[j]+1,v[j-1]+1,prev+(a[i-1]===b[j-1]?0:1));prev=old}}return v[b.length]}
-function similarity(a,b){const aa=norm(a),bb=norm(b),n=Math.max(aa.length,bb.length);return n?1-levenshtein(aa,bb)/n:0}
-function nameParts(raw){const arr=(raw||'').normalize('NFKC').trim().split(/[\s　]+/).map(norm).filter(Boolean);if(arr.length>=2)return arr;const n=norm(raw);return n.length>=3?[n.slice(0,2),n.slice(2)]:[n]}
-function rowBox(items){return {x0:Math.min(...items.map(w=>w.bbox.x0)),y0:Math.min(...items.map(w=>w.bbox.y0)),x1:Math.max(...items.map(w=>w.bbox.x1)),y1:Math.max(...items.map(w=>w.bbox.y1))}}
-function findNameBox(words,rawTarget){
-  const target=norm(rawTarget); if(!target)return null; const parts=nameParts(rawTarget); const surname=parts[0]||target; const given=parts[1]||'';
-  const lines=clusterByY(words,18).map(line=>{const items=[...line.items].sort((a,b)=>a.bbox.x0-b.bbox.x0);const text=items.map(w=>norm(w.text)).join('');return{...line,items,text}});
-  let best=null;
-  for(const line of lines){
-    const txt=line.text; if(!txt)continue;
-    let score=0,mode='';
-    if(txt.includes(target)){score=1;mode='氏名の完全一致'}
-    else if(surname.length>=2&&txt.includes(surname)&&(!given||txt.includes(given))){score=.96;mode='姓・名の部分一致'}
-    else if(surname.length>=2&&txt.includes(surname)){score=.89;mode='姓の一致'}
-    else {
-      for(let i=0;i<line.items.length;i++)for(let j=i;j<Math.min(line.items.length,i+4);j++){
-        const seg=line.items.slice(i,j+1).map(w=>norm(w.text)).join(''); const sim=Math.max(similarity(seg,target),surname.length>=2?similarity(seg,surname)*.93:0); if(sim>score){score=sim;mode='氏名の近似一致'}
-      }
-    }
-    // 氏名列らしい文字中心の行を優先し、数字だらけの行を下げる
-    const digitCount=(txt.match(/\d/g)||[]).length; const charCount=txt.length-digitCount; score += Math.min(.04,charCount*.005)-Math.min(.08,digitCount*.006);
-    if(!best||score>best.score)best={score,mode,box:rowBox(line.items),line};
+el('runManualRead').onclick=async()=>{
+ updateReadButton();if(el('runManualRead').disabled||!lastOCR)return;
+ setReading(true);let worker;const status=el('rowPickerStatus'),wrap=el('scanProgressWrap'),bar=el('scanProgress');wrap.classList.remove('hidden');bar.style.width='2%';
+ try{
+  status.textContent='本人の枠線と日付の列を確認しています…';
+  const canvas=lastOCR.canvas,pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height),grid=ShiftGrid.locateGrid(pixels,{...manualPick});drawPickerMarks(grid);
+  if(!window.Tesseract)throw new Error('OCR_UNAVAILABLE');
+  status.textContent='文字の読み取りを準備しています。初回は少し時間がかかります…';
+  const base=new URL('../vendor/',location.href).href;
+  worker=await Tesseract.createWorker('eng',1,{workerPath:base+'worker.min.js',corePath:base+'core',langPath:base+'lang',gzip:false});
+  await worker.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789'});
+  const rows={},snippets=[];
+  for(let i=0;i<grid.cells.length;i++){
+   const c=grid.cells[i];status.textContent=`${c.day}日・${c.type==='second'?'2便':'3便'}を読み取っています… (${i+1}/${grid.cells.length})`;
+   const crop=ShiftGrid.cellImage(pixels,c),part=document.createElement('canvas');part.width=crop.width;part.height=crop.height;part.getContext('2d').putImageData(new ImageData(crop.data,crop.width,crop.height),0,0);
+   const result=await worker.recognize(part),value=result.data.text.trim(),valid=(c.type==='second'?/^2\d{2}$/:/^3\d{2}$/).test(value);
+   rows[c.day]??={};if(valid)rows[c.day][c.type]=value;
+   snippets.push({day:c.day,type:c.type,url:part.toDataURL('image/png'),confidence:result.data.confidence,value:valid?value:''});bar.style.width=`${Math.round((i+1)/grid.cells.length*100)}%`;
   }
-  if(!best||best.score<.72||!['氏名の完全一致','姓・名の部分一致'].includes(best.mode))return null;
-  // 本人名付近だけのbboxに狭める。行全体ではなく、氏名候補語を中心にする。
-  let chosen=best.line.items.filter(w=>{const t=norm(w.text);return (surname&&similarity(t,surname)>=.5)||(given&&similarity(t,given)>=.5)||(target&&similarity(t,target)>=.5)});
-  if(!chosen.length)chosen=best.line.items;
-  return {box:rowBox(chosen),mode:best.mode,score:best.score};
-}
-function findDateHeaders(words,nameY){
-  const dayWords=words.filter(w=>{const d=digits(w.text),n=Number(d);return d.length<=2&&n>=1&&n<=31&&centerY(w)<nameY});
-  const clusters=clusterByY(dayWords,16).map(c=>({y:c.y,items:c.items.filter(w=>{const n=Number(digits(w.text));return n>=1&&n<=31})})).filter(c=>c.items.length>=4);
-  if(!clusters.length)return null;
-  clusters.sort((a,b)=>(b.items.length-a.items.length)||Math.abs(nameY-a.y)-Math.abs(nameY-b.y));
-  for(const best of clusters){
-    const arr=best.items.map(w=>({day:Number(digits(w.text)),x:centerX(w)})).sort((a,b)=>a.x-b.x); const uniq=[]; for(const x of arr){if(!uniq.some(u=>u.day===x.day))uniq.push(x)}
-    if(uniq.length<4)continue; const spac=[];for(let i=1;i<uniq.length;i++)spac.push(uniq[i].x-uniq[i-1].x); const med=median(spac.filter(x=>x>5)); if(!med)continue; const sane=spac.filter(x=>x>med*.45&&x<med*1.7).length>=Math.max(2,spac.length-2); const steps=uniq.slice(1).map((v,i)=>(v.x-uniq[i].x)/(v.day-uniq[i].day));const unit=median(steps);if(sane&&unit>0&&steps.every(v=>v>unit*.65&&v<unit*1.35))return uniq;
-  }
-  return null;
-}
-function findCourseLines(words,nameBox){
-  const y=(nameBox.y0+nameBox.y1)/2, h=Math.max(18,nameBox.y1-nameBox.y0);
-  const nums=words.filter(w=>{const d=digits(w.text),n=Number(d),cy=centerY(w);return d.length===3&&n>=200&&n<=399&&Math.abs(cy-y)<=Math.max(115,h*4.2)&&w.bbox.x0>nameBox.x0});
-  const lines=clusterByY(nums,15).map(c=>({y:c.y,items:c.items}));
-  const seconds=lines.filter(l=>l.items.filter(w=>{const n=Number(digits(w.text));return n>=200&&n<=299}).length>=1);
-  const thirds=lines.filter(l=>l.items.filter(w=>{const n=Number(digits(w.text));return n>=300&&n<=399}).length>=1);
-  let best=null; for(const a of seconds)for(const b of thirds){if(b.y<=a.y)continue;const gap=b.y-a.y;if(gap>Math.max(85,h*3.2))continue;const ac=a.items.filter(w=>Number(digits(w.text))>=200&&Number(digits(w.text))<=299).length,bc=b.items.filter(w=>Number(digits(w.text))>=300&&Number(digits(w.text))<=399).length,count=ac+bc;const dist=Math.abs(((a.y+b.y)/2)-y);if(y<a.y-h/2||y>b.y+h/2)continue;const score=-dist*10-gap*.05+Math.min(count,4);if(!best||score>best.score)best={second:a,third:b,score}}
-  return best;
-}
-function nearestDay(x,headers){let best=null;for(const h of headers){const dist=Math.abs(h.x-x);if(!best||dist<best.dist)best={day:h.day,dist}}const spacings=[];for(let i=1;i<headers.length;i++)spacings.push(headers[i].x-headers[i-1].x);const spacing=median(spacings)||80;return best&&best.dist<=spacing*.48?best.day:null}
-function parseTableFromTap(words,tapX,tapY){
-  const headers=findDateHeaders(words,tapY); if(!headers)throw new Error('DATE_HEADER_NOT_FOUND');
-  const fakeBox={x0:tapX,y0:tapY-18,x1:tapX+10,y1:tapY+18};
-  const lines=findCourseLines(words,fakeBox); if(!lines)throw new Error('COURSE_ROWS_NOT_FOUND');
-  const out={};
-  for(const w of lines.second.items){const n=Number(digits(w.text));if(n<200||n>299)continue;const day=nearestDay(centerX(w),headers);if(day)out[day]={...(out[day]||{}),second:String(n)}}
-  for(const w of lines.third.items){const n=Number(digits(w.text));if(n<300||n>399)continue;const day=nearestDay(centerX(w),headers);if(day)out[day]={...(out[day]||{}),third:String(n)}}
-  for(const h of headers){if(!out[h.day])out[h.day]={}}
-  if(!Object.values(out).some(r=>r.second||r.third))throw new Error('NO_COURSES_MAPPED');
-  return {rows:out,nameMode:'tap'};
-}
-
-function parseTable(words,text){
-  const found=findNameBox(words,data.name); if(!found)throw new Error('NAME_NOT_FOUND'); const nameBox=found.box,nameY=(nameBox.y0+nameBox.y1)/2;
-  const headers=findDateHeaders(words,nameY); if(!headers)throw new Error('DATE_HEADER_NOT_FOUND'); const lines=findCourseLines(words,nameBox); if(!lines)throw new Error('COURSE_ROWS_NOT_FOUND');
-  const out={};
-  for(const w of lines.second.items){const n=Number(digits(w.text));if(n<200||n>299)continue;const day=nearestDay(centerX(w),headers);if(day)out[day]={...(out[day]||{}),second:String(n)}}
-  for(const w of lines.third.items){const n=Number(digits(w.text));if(n<300||n>399)continue;const day=nearestDay(centerX(w),headers);if(day)out[day]={...(out[day]||{}),third:String(n)}}
-  for(const h of headers){if(!out[h.day])out[h.day]={}}
-  if(!Object.values(out).some(r=>r.second||r.third))throw new Error('NO_COURSES_MAPPED'); return {rows:out,nameMode:found.mode};
-}
+  buildPreview(rows,{nameMode:'枠線で1マスずつ読取。入力欄の下に元のマスを表示'});
+  const trs=[...el('previewBody').children];for(const item of snippets){const tr=trs.find(t=>Number(t.firstChild.textContent)===item.day);if(!tr)continue;const input=tr.querySelector(`[data-k="${item.type}"]`);const img=document.createElement('img');img.src=item.url;img.alt=`${item.day}日 ${item.type==='second'?'2便':'3便'} 原本`;img.className='cell-source';input.parentElement.appendChild(img);if(!item.value||item.confidence<85){input.classList.add('needs-review');input.title='元のマスと照合してください'}}
+  el('rowPicker').classList.add('hidden');el('scanStatus').textContent='読み取り候補と元のマスを照合してください。空欄は休みと決めつけず、確認してチェックしてください。';
+ }catch(e){
+  const errors={ROW_GRID_NOT_FOUND:'氏名の上下の枠線を確認できません。名前の中央を指定し直してください。',COLUMN_GRID_NOT_FOUND:'指定した日数分の列を確認できません。最初の日付の位置と、最初・最後の日付を確認してください。',OCR_UNAVAILABLE:'文字読み取りのファイルを読み込めません。アップロード内容と通信状態を確認してください。'};
+  status.textContent=errors[e.message]||'読み取りを完了できませんでした。通信状態を確認して再実行するか、手入力で続けてください。';
+ }finally{if(worker)await worker.terminate().catch(()=>{});wrap.classList.add('hidden');setReading(false)}
+};
 el('photoInput').onchange=e=>{const f=e.target.files?.[0];if(f)scan(f);e.target.value=''};
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;el('installBtn').classList.remove('hidden')});
-el('installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}else{alert('iPhoneではSafariの共有ボタン →「ホーム画面に追加」を選んでください。')}};
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=7').catch(console.warn);
+el('installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}};
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=9').catch(console.warn);
 render();

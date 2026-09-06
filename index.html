@@ -15,7 +15,7 @@
 <body>
   <header class="topbar">
     <div>
-      <div class="eyebrow">自分用 · v7</div>
+      <div class="eyebrow">自分用 · v9</div>
       <h1>配送シフト</h1>
     </div>
     <button id="installBtn" class="secondary hidden">ホーム画面に追加</button>
@@ -33,7 +33,7 @@
       </div>
       <button id="manualEntry" class="secondary full">手入力で登録</button>
       <input id="photoInput" type="file" accept="image/*" hidden />
-      <p role="status" aria-live="polite" id="scanStatus" class="muted">氏名を基準に本人の2便・3便を探し、日付の列位置に合わせて読み取ります。No.は固定しません。</p>
+      <p role="status" aria-live="polite" id="scanStatus" class="muted">氏名の位置を指定し、枠線から本人の2便・3便を1マスずつ読み取ります。No.は固定しません。</p>
       <div id="scanProgressWrap" class="progress-wrap hidden"><div id="scanProgress" class="progress"></div></div>
     </section>
 
@@ -56,18 +56,19 @@
     <section id="rowPicker" class="card hidden">
       <div class="section-head"><h2>手動で位置を指定</h2><button id="closeRowPicker" class="secondary">閉じる</button></div>
       <p id="pickerStep" class="picker-step">① 写真の中の自分の名前をタップしてください。</p>
-      <p class="muted">自動認識が失敗しても、この画面から続けられます。<strong>自分の名前</strong> → <strong>写真で一番左の最初の日付</strong>の順にタップしてください。No.は使いません。</p>
+      <p class="muted">写真上で位置を指定してください。<strong>自分の名前</strong> → <strong>写真で一番左の最初の日付</strong>の順にタップしてください。No.は使いません。</p>
       <div class="picker-wrap"><canvas id="rowPickerCanvas" aria-label="勤務表の写真。自分の名前と最初の日付を順にタップしてください"></canvas><div class="tap-guide">青①＝氏名　赤②＝最初の日付</div></div>
       <div class="manual-date">
-        <label>タップした最初の日付
+        <label>写真の最初の日付
           <input id="firstDateInput" type="number" min="1" max="31" inputmode="numeric" placeholder="例：11" disabled />
         </label>
+        <label>写真の最後の日付<input id="lastDateInput" type="number" min="1" max="31" inputmode="numeric" placeholder="例：20" disabled></label>
       </div>
       <div class="row">
         <button id="resetManualPick" class="secondary">2点をやり直す</button>
         <button id="runManualRead" class="accent" disabled>この位置で読み取る</button>
       </div>
-      <button id="pickerManualEntry" class="secondary full hidden">手入力で続ける</button>
+      <button id="pickerManualEntry" class="secondary full">手入力で続ける</button>
       <p aria-live="polite" id="rowPickerStatus" class="muted">まず自分の名前をタップしてください。</p>
     </section>
 
@@ -81,16 +82,18 @@
     <section class="card">
       <details>
         <summary>コース別の出勤時間を編集</summary>
-        <p class="muted">新しいコースが出たらここに「コース番号＝出勤時間」を追加できます。</p>
+        <p class="muted">2026年9月1日からの掲示表に合わせ、2便201〜226の全26コースを登録済みです。変更があれば編集できます。</p>
         <div id="timeMap"></div>
         <div class="row three"><input id="newCourse" inputmode="numeric" placeholder="例 210" maxlength="3" /><input id="newTime" placeholder="例 6:05〜6:15" /><button id="addTime">追加</button></div>
       </details>
     </section>
   </main>
 
+  <datalist id="knownCourses"></datalist>
   <footer>データはこの端末内（ブラウザのローカル保存）に保存されます。</footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="app.js?v=7"></script>
+  <script src="vendor/tesseract.min.js"></script>
+  <script src="grid-reader.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>

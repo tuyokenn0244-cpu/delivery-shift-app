@@ -4,3 +4,5 @@
 .picker-step{font-size:16px;font-weight:900;margin:6px 0 8px}.manual-date{margin-top:12px;padding:12px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc}.manual-date input:disabled{background:#e2e8f0;color:#64748b}.row button:disabled{opacity:.45;cursor:not-allowed}
 
 #manualEntry{margin-top:10px}button:disabled{opacity:.5}label,.muted{font-size:14px}.calendar{grid-template-columns:repeat(7,minmax(0,1fr))}.day{min-width:0;overflow-wrap:anywhere}.time{font-size:12px}.row{flex-wrap:wrap}
+
+.cell-source{display:block;width:100%;max-width:140px;height:auto;margin:6px auto}.needs-review{border:2px solid #d97706;background:#fffbeb}.manual-date{display:grid;grid-template-columns:1fr 1fr;gap:12px}.table-scroll{max-height:65vh}

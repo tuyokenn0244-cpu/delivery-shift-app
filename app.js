@@ -120,29 +120,54 @@ function parseTableFromTwoTaps(words,nameX,nameY,dateX,firstDay){
 }
 el('closeRowPicker').onclick=()=>el('rowPicker').classList.add('hidden');
 el('rowPickerCanvas').addEventListener('click',e=>{
-  if(!lastOCR)return;
+  if(!lastOCR||scanning)return;
   const canvas=el('rowPickerCanvas'), rect=canvas.getBoundingClientRect();
   const x=(e.clientX-rect.left)*(canvas.width/rect.width), y=(e.clientY-rect.top)*(canvas.height/rect.height);
   const step=el('pickerStep'),status=el('rowPickerStatus'),firstDate=el('firstDateInput'),runBtn=el('runManualRead');
   if(manualPick.nameX==null){
     manualPick.nameX=x;manualPick.nameY=y;step.textContent='② 次に、表の上にある「最初の日付」をタップしてください。';status.textContent='名前の位置を保存しました。次は、その写真で一番左に表示されている日付（例：11）をタップしてください。';
   }else if(manualPick.dateX==null){
-    manualPick.dateX=x;manualPick.dateY=y;const guessed=nearestRecognizedDay(lastOCR.words,x,y);manualPick.firstDate=guessed;firstDate.value=guessed||'';firstDate.disabled=false;runBtn.disabled=false;step.textContent='③ 日付を確認して「この位置で読み取る」を押してください。';status.textContent=guessed?`日付「${guessed}」付近を指定しました。数字が合っているか確認してください。`:'日付の数字だけ自動確認できませんでした。下の欄にタップした日付を入力してください。';
+    manualPick.dateX=x;manualPick.dateY=y;const guessed=null;manualPick.firstDate=null;firstDate.value='';firstDate.disabled=false;runBtn.disabled=true;step.textContent='③ 日付を確認して「この位置で読み取る」を押してください。';status.textContent=guessed?`日付「${guessed}」付近を指定しました。数字が合っているか確認してください。`:'写真に書かれた日付を下に入力してください。例：11日なら11。自動では入力しません。';
   }else{
     // やり直したい場合は日付タップを更新
-    manualPick.dateX=x;manualPick.dateY=y;const guessed=nearestRecognizedDay(lastOCR.words,x,y);if(guessed){manualPick.firstDate=guessed;firstDate.value=guessed}status.textContent='日付位置を更新しました。';
+    manualPick.dateX=x;manualPick.dateY=y;manualPick.firstDate=null;firstDate.value='';runBtn.disabled=true;status.textContent='日付位置を更新しました。写真の日付を下に入力してください。';
   }
   drawPickerMarks();
 });
 el('resetManualPick').onclick=()=>{if(lastOCR?.canvas)showManualPicker(lastOCR.canvas,'指定をやり直します。')};
 el('firstDateInput').addEventListener('input',e=>{const n=Number(e.target.value);manualPick.firstDate=(n>=1&&n<=31)?n:null;el('runManualRead').disabled=!manualPick.firstDate||manualPick.dateX==null||manualPick.nameX==null});
-el('runManualRead').onclick=()=>{
-  const status=el('rowPickerStatus');
+// Re-read a magnified horizontal band instead of reusing failed full-page OCR.
+function remapCropWords(words,x0,y0,scale){return words.map(w=>({...w,bbox:{x0:w.bbox.x0/scale+x0,x1:w.bbox.x1/scale+x0,y0:w.bbox.y0/scale+y0,y1:w.bbox.y1/scale+y0}}))}
+async function recognizeBand(source,cy,left){
+  const margin=Math.max(20,source.width*.035),x0=Math.max(0,Math.floor(left)),y0=Math.max(0,Math.floor(cy-margin));
+  const width=source.width-x0,height=Math.min(source.height,Math.ceil(cy+margin))-y0;
+  const scale=Math.min(3,3600/width),crop=document.createElement('canvas');crop.width=Math.round(width*scale);crop.height=Math.round(height*scale);
+  crop.getContext('2d').drawImage(source,x0,y0,width,height,0,0,crop.width,crop.height);
+  const result=await Tesseract.recognize(crop,'eng');
+  return remapCropWords(result.data.words||[],x0,y0,scale);
+}
+el('runManualRead').onclick=async()=>{
+  if(scanning||!lastOCR?.canvas)return;
+  const status=el('rowPickerStatus'),firstDay=Number(el('firstDateInput').value);
+  if(!Number.isInteger(firstDay)||firstDay<1||firstDay>31){status.textContent='写真に書かれた日付を1〜31で入力してください。';return}
+  scanning=true;const controls=['runManualRead','openScanner','manualEntry','shiftMonth','firstDateInput','resetManualPick','closeRowPicker'];controls.forEach(id=>el(id).disabled=true);
+  const pick={...manualPick},source=lastOCR.canvas;
   try{
-    const firstDay=Number(el('firstDateInput').value);const parsed=parseTableFromTwoTaps(lastOCR.words,manualPick.nameX,manualPick.nameY,manualPick.dateX,firstDay);
-    buildPreview(parsed.rows,{nameMode:'名前＋最初の日付をタップ'});status.textContent='2点指定から候補を作成しました。内容を確認してください。';el('rowPicker').classList.add('hidden');el('scanStatus').textContent='本人行と日付位置を手動指定しました。読み取り候補を確認してください。';
-  }catch(err){console.error(err);const msg={FIRST_DATE_REQUIRED:'日付を1〜31で入力してください。',COURSE_ROWS_NOT_FOUND:'名前のタップ位置から2便・3便を特定できませんでした。「竹谷 健」の文字中央をタップし直してください。',COLUMN_GRID_NOT_FOUND:'表の縦列を確認できませんでした。写真全体が入った画像を使ってください。',DATE_COLUMN_NOT_FOUND:'タップした日付と表の列を対応できませんでした。日付の数字中央をタップし直してください。',NO_COURSES_MAPPED:'本人行のコースを列へ対応できませんでした。2点を指定し直してください。'};status.textContent=msg[err.message]||'読み取り候補を作れませんでした。2点を指定し直してください。';}
+    if(!window.Tesseract)throw new Error('OCR_UNAVAILABLE');
+    status.textContent='名前の右側を拡大して、2便・3便を読み直しています…';
+    const rowWords=await recognizeBand(source,pick.nameY,pick.nameX);
+    status.textContent='日付の見出しを拡大して読み直しています…';
+    const headerWords=await recognizeBand(source,pick.dateY,pick.dateX-source.width*.02);
+    const parsed=parseTableFromTwoTaps([...rowWords,...headerWords],pick.nameX,pick.nameY,pick.dateX,firstDay);
+    buildPreview(parsed.rows,{nameMode:'指定した行と日付を拡大して再読取'});
+    el('rowPicker').classList.add('hidden');el('scanStatus').textContent='拡大して読み直した候補です。写真と照合してから登録してください。';
+  }catch(err){
+    const msg={COURSE_ROWS_NOT_FOUND:'拡大しても2便・3便を確認できませんでした。',COLUMN_GRID_NOT_FOUND:'日付の見出しを確認できませんでした。',DATE_COLUMN_NOT_FOUND:'入力した日付と写真の列が一致しません。写真で11日をタップした場合は11を入力してください。',NO_COURSES_MAPPED:'コースと日付を対応できませんでした。',OCR_UNAVAILABLE:'文字の読み取り機能を利用できません。通信状態を確認してください。'};
+    status.textContent=(msg[err.message]||'拡大した画像を読み取れませんでした。')+' 写真を確認し、難しい場合は下の「手入力で続ける」を使ってください。';
+    el('pickerManualEntry').classList.remove('hidden');
+  }finally{scanning=false;controls.forEach(id=>el(id).disabled=false)}
 };
+el('pickerManualEntry').onclick=()=>el('manualEntry').onclick();
 
 async function preprocess(file){
   const img=await createImageBitmap(file); const maxW=2200; const scale=Math.min(2.0,maxW/img.width); const w=Math.max(1,Math.round(img.width*scale)),h=Math.max(1,Math.round(img.height*scale));
@@ -245,5 +270,5 @@ function parseTable(words,text){
 el('photoInput').onchange=e=>{const f=e.target.files?.[0];if(f)scan(f);e.target.value=''};
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;el('installBtn').classList.remove('hidden')});
 el('installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}else{alert('iPhoneではSafariの共有ボタン →「ホーム画面に追加」を選んでください。')}};
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=6').catch(console.warn);
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=7').catch(console.warn);
 render();

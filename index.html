@@ -10,18 +10,18 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>配送シフト</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=11" />
 </head>
 <body>
   <header class="topbar">
     <div>
-      <div class="eyebrow">自分用 · v10</div>
+      <div class="eyebrow">自分用 · v11</div>
       <h1>配送シフト</h1>
     </div>
     <button id="installBtn" class="secondary hidden">ホーム画面に追加</button>
   </header>
 
-  <main>
+  <main><p id="updateNotice" class="card hidden">新しい版を準備しました。入力を保存してから<button id="reloadApp">更新を反映</button></p>
     <section class="card controls">
       <label>氏名
         <input id="workerName" value="竹谷 健" autocomplete="name" />
@@ -31,6 +31,7 @@
         <button id="saveName">氏名を保存</button>
         <button id="openScanner" class="accent">勤務表を撮る / 選ぶ</button>
       </div>
+      <button id="takePhoto" class="secondary full">カメラで撮影</button><input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
       <button id="manualEntry" class="secondary full">手入力で登録</button>
       <input id="photoInput" type="file" accept="image/*" hidden />
       <p role="status" aria-live="polite" id="scanStatus" class="muted">氏名の位置を指定し、枠線から本人の2便・3便を1マスずつ読み取ります。No.は固定しません。</p>
@@ -55,9 +56,9 @@
 
     <section id="rowPicker" class="card hidden">
       <div class="section-head"><h2>手動で位置を指定</h2><button id="closeRowPicker" class="secondary">閉じる</button></div>
-      <p id="pickerStep" class="picker-step">① 写真の中の自分の名前をタップしてください。</p>
+      <button id="skipAuto" class="secondary hidden">自動検出を待たず手動指定する</button><p id="pickerStep" class="picker-step">① 写真の中の自分の名前をタップしてください。</p>
       <p class="muted">写真上で位置を指定してください。<strong>自分の名前</strong> → <strong>写真で一番左の最初の日付</strong>の順にタップしてください。No.は使いません。</p>
-      <div class="picker-wrap"><canvas id="rowPickerCanvas" aria-label="勤務表の写真。自分の名前と最初の日付を順にタップしてください"></canvas><div class="tap-guide">青①＝氏名　赤②＝最初の日付</div></div>
+      <div class="row"><label>写真の拡大 <select id="photoZoom"><option value="1">全体</option><option value="2">2倍</option><option value="3">3倍</option></select></label><button id="rotatePhoto" class="secondary">写真を90°回転</button></div><div class="picker-wrap"><canvas id="rowPickerCanvas" aria-label="勤務表の写真。自分の名前と最初の日付を順にタップしてください"></canvas><div class="tap-guide">青①＝氏名　赤②＝最初の日付</div></div>
       <div class="manual-date">
         <label>写真の最初の日付
           <input id="firstDateInput" type="number" min="1" max="31" inputmode="numeric" placeholder="例：11" disabled />
@@ -76,6 +77,7 @@
       <div class="section-head"><h2>写真の読取候補</h2><button id="closePreview" class="secondary">閉じる</button></div>
       <p id="previewNote" class="muted">日付の列位置と本人の2便・3便を対応させた候補です。数字を確認してから登録してください。</p>
       <div class="table-scroll"><table><thead><tr><th>日</th><th>2便</th><th>3便</th><th>休み</th></tr></thead><tbody id="previewBody"></tbody></table></div>
+      <details><summary>読取デバッグ（列・行・各セル）</summary><pre id="debugOutput"></pre></details><button id="backToPhoto" class="secondary full">写真の位置指定をやり直す</button>
       <button id="commitPreview" class="accent full">確認した内容をカレンダーへ登録</button>
     </section>
 
@@ -93,7 +95,8 @@
   <footer>データはこの端末内（ブラウザのローカル保存）に保存されます。</footer>
 
   <script src="vendor/tesseract.min.js"></script>
-  <script src="grid-reader.js?v=10"></script>
-  <script src="app.js?v=10"></script>
+  <script src="grid-reader.js?v=11"></script>
+  <script src="photo-reader.js?v=11"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>

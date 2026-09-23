@@ -2,6 +2,8 @@
 (function(root){
 function locateGrid(image,pick){
  const {width:w,height:h,data}=image;
+ if(!['nameX','nameY','dateX','dateY'].every(k=>Number.isFinite(pick[k]))||pick.nameX<0||pick.nameX>=w||pick.nameY<0||pick.nameY>=h)throw new Error('ROW_GRID_NOT_FOUND');
+ if(!Number.isInteger(pick.firstDate)||!Number.isInteger(pick.lastDate)||pick.firstDate<1||pick.lastDate>31||pick.lastDate<pick.firstDate)throw new Error('COLUMN_GRID_NOT_FOUND');
  const gray=(x,y)=>{x=Math.round(x);y=Math.round(y);if(x<0||x>=w||y<0||y>=h)return 255;const i=(y*w+x)*4;return data[i]*.299+data[i+1]*.587+data[i+2]*.114};
  const dark=(x,y)=>Math.min(gray(x,y),gray(x,y-1),gray(x,y+1))<135;
  function horizontal(cy,left,right){let best={score:0,y:cy,slope:0};for(let dy=-3;dy<=3;dy++)for(let slope=-.04;slope<=.04;slope+=.004){let n=0,total=0;for(let x=left;x<=right;x+=2){n+=dark(x,cy+dy+slope*(x-pick.nameX));total++}if(n/total>best.score)best={score:n/total,y:cy+dy,slope}}return best}
@@ -21,6 +23,7 @@ function locateGrid(image,pick){
  const gaps=edges.slice(1).map((x,i)=>x-edges[i]),mean=gaps.reduce((a,b)=>a+b)/gaps.length;
  if(mean<w*.025||gaps.some(g=>g<mean*.75||g>mean*1.25))throw new Error('COLUMN_GRID_NOT_FOUND');
  const cells=[];for(let i=0;i<count;i++){const left=edges[i],right=edges[i+1],cx=(left+right)/2,t=at(top,cx),b=at(bottom,cx);for(let row=0;row<2;row++)cells.push({day:pick.firstDate+i,type:row?'third':'second',left:Math.ceil(left+5),top:Math.ceil(t+(b-t)*row/2+4),width:Math.floor(right-left-10),height:Math.floor((b-t)/2-8)})}
+ if(cells.some(c=>c.width<8||c.height<6||c.left<0||c.top<0||c.left+c.width>w||c.top+c.height>h))throw new Error('ROW_GRID_NOT_FOUND');
  return {cells,edges,top,bottom};
 }
 function cellImage(image,cell){

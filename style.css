@@ -10,3 +10,7 @@
 .cell-state{display:block;color:#92400e}td input[type=checkbox]{width:24px;height:24px}td:first-child button{font-size:12px;padding:6px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}#takePhoto{margin-top:8px}
 
 .card{scroll-margin-top:100px}.picker-wrap{overflow:auto;max-height:65vh}.picker-wrap canvas{max-width:none}select{font-size:16px;padding:10px;border-radius:8px}td:first-child{min-width:74px}.cell-state{min-height:1.4em}
+
+.read-feedback{position:static;margin:8px auto;padding:12px;max-width:760px;background:#eff6ff;color:#1e3a8a;border:2px solid #93c5fd;border-radius:12px;font-weight:700}.read-feedback[data-level=error]{background:#fff1f2;color:#9f1239;border-color:#fda4af}.read-feedback[data-level=success]{background:#ecfdf5;color:#065f46;border-color:#6ee7b7}#scanDebugLog{max-height:320px;overflow:auto;padding:12px;background:#0f172a;color:#e2e8f0}#readButtonHint{font-weight:700}#runManualRead{touch-action:manipulation;min-height:52px}.card{scroll-margin-top:170px}
+
+#rowPickerStatus,#previewFeedback{padding:10px;background:#eff6ff;border-radius:10px;color:#1e3a8a;font-weight:700}#rowPickerStatus[data-level=error]{background:#fff1f2;color:#9f1239}

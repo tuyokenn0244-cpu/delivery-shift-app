@@ -95,86 +95,156 @@ el('commitPreview').onclick=()=>{
   const previous=data.shifts;data.shifts=next;
   try{save()}catch{data.shifts=previous;el('previewNote').textContent='保存できませんでした。ブラウザの保存容量・設定を確認してください。';return}
   const [y,m]=previewMonth.split('-').map(Number);view=new Date(y,m-1,1);selected=`${previewMonth}-${pad(entries.find(([,r])=>r.off||r.second||r.third)[0])}`;
-  render();el('ocrPreview').classList.add('hidden');el('scanStatus').textContent=`${count}日分を${y}年${m}月に登録しました。`;
+  render();el('ocrPreview').classList.add('hidden');feedback.show(`${count}日分を${y}年${m}月に登録しました。`,'success');
 };
 
 
+const feedback=window.ScanFeedback;
+let photoState='empty',activeRead=null,autoGeneration=0,autoActive=false;
+const positionText=(x,y)=>Number.isFinite(x)&&Number.isFinite(y)?`x=${Math.round(x)} y=${Math.round(y)}`:'未指定';
+function logPositions(){feedback.log(`画像：${photoState==='ready'?'読み込み済み':photoState} / 氏名位置：${positionText(manualPick.nameX,manualPick.nameY)} / 日付位置：${positionText(manualPick.dateX,manualPick.dateY)}`)}
+function stopAuto(){autoGeneration++;autoActive=false;if(window.PhotoReader)PhotoReader.cancelAuto();el('skipAuto').classList.add('hidden')}
+function dateValue(id){const v=el(id).value.normalize('NFKC').trim();return /^\d+$/.test(v)?Number(v):NaN}
+function readValidation(){
+ if(photoState==='loading')return '写真を読み込み中です。準備ができるまでお待ちください。';
+ if(photoState!=='ready'||!lastOCR||!lastOCR.canvas||!lastOCR.canvas.width||!lastOCR.canvas.height)return '勤務表の写真を選んでください。';
+ if(!Number.isFinite(manualPick.nameX)||!Number.isFinite(manualPick.nameY))return '自分の名前の位置をタップしてください。';
+ if(!Number.isFinite(manualPick.dateX)||!Number.isFinite(manualPick.dateY))return '最初の日付をタップしてください。';
+ const ym=el('shiftMonth').value,[y,m]=ym.split('-').map(Number);
+ if(!/^\d{4}-\d{2}$/.test(ym)||m<1||m>12)return '勤務表の年月を選んでください。';
+ const a=dateValue('firstDateInput'),b=dateValue('lastDateInput'),limit=new Date(y,m,0).getDate();
+ if(!Number.isInteger(a)||a<1||a>limit)return `写真の最初の日付を1〜${limit}の数字で入力してください。`;
+ if(!Number.isInteger(b)||b<a||b>limit)return `写真の最後の日付を${a}〜${limit}の数字で入力してください。`;
+ manualPick.firstDate=a;manualPick.lastDate=b;return '';
+}
+function updateReadButton(){
+ const button=el('runManualRead');button.disabled=photoState!=='ready';
+ // Missing fields remain clickable so a tap can explain exactly what is missing.
+ button.textContent=scanning&&photoState==='ready'?'読み取り中…':'シフトを読み取る';
+ const hint=el('readButtonHint');hint.textContent=scanning?'処理中です。中止して再指定できます。':readValidation()||'準備完了。「シフトを読み取る」を押してください。';
+}
+function refreshControls(){
+ for(const id of ['openScanner','takePhoto','manualEntry','shiftMonth','firstDateInput','lastDateInput','resetManualPick','closeRowPicker','pickerManualEntry','rotatePhoto','photoZoom'])el(id).disabled=scanning;
+ el('cancelRead').classList.toggle('hidden',!activeRead);el('rowPicker').setAttribute('aria-busy',String(scanning));updateReadButton();
+}
+function setReading(busy){scanning=busy;refreshControls()}
 function showManualPicker(canvas){
  manualPick={nameX:null,nameY:null,dateX:null,dateY:null,firstDate:null,lastDate:null};
  const out=el('rowPickerCanvas');out.width=canvas.width;out.height=canvas.height;
- el('firstDateInput').value='';el('lastDateInput').value='';el('firstDateInput').disabled=true;el('lastDateInput').disabled=true;
- el('runManualRead').disabled=true;el('pickerStep').textContent='① 写真の中の自分の名前の中央をタップしてください。';
- el('rowPickerStatus').textContent='氏名の位置から本人の枠を探します。No.は固定しません。';
- el('rowPicker').classList.remove('hidden');el('ocrPreview').classList.add('hidden');drawPickerMarks();el('rowPicker').scrollIntoView({behavior:'smooth',block:'start'});
+ el('firstDateInput').value='';el('lastDateInput').value='';
+ el('pickerStep').textContent='① 写真の中の自分の名前の中央をタップしてください。';
+ el('rowPicker').classList.remove('hidden');el('ocrPreview').classList.add('hidden');drawPickerMarks();refreshControls();
+ el('rowPicker').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function drawPickerMarks(grid){
- if(!lastOCR?.canvas)return;const out=el('rowPickerCanvas'),ctx=out.getContext('2d');ctx.drawImage(lastOCR.canvas,0,0);
+ if(!lastOCR||!lastOCR.canvas)return;const out=el('rowPickerCanvas'),ctx=out.getContext('2d');if(!ctx)throw new Error('CANVAS_UNAVAILABLE');ctx.drawImage(lastOCR.canvas,0,0);
  ctx.lineWidth=Math.max(2,out.width/500);ctx.font=`${Math.max(24,out.width/35)}px sans-serif`;
- for(const [x,y,label,color] of [[manualPick.nameX,manualPick.nameY,'①','#2563eb'],[manualPick.dateX,manualPick.dateY,'②','#dc2626']]){if(x==null)continue;ctx.strokeStyle=color;ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,out.width/65,0,Math.PI*2);ctx.stroke();ctx.fillText(label,x+15,y-10)}
+ for(const [x,y,label,color] of [[manualPick.nameX,manualPick.nameY,'①','#2563eb'],[manualPick.dateX,manualPick.dateY,'②','#dc2626']]){if(!Number.isFinite(x)||!Number.isFinite(y))continue;ctx.strokeStyle=color;ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,out.width/65,0,Math.PI*2);ctx.stroke();ctx.fillText(label,x+15,y-10)}
  if(grid){ctx.strokeStyle='#16a34a';for(const c of grid.cells)ctx.strokeRect(c.left,c.top,c.width,c.height)}
 }
-function updateReadButton(){
- const a=Number(el('firstDateInput').value),b=Number(el('lastDateInput').value),ym=el('shiftMonth').value;
- const [y,m]=ym.split('-').map(Number),limit=new Date(y,m,0).getDate();
- manualPick.firstDate=a;manualPick.lastDate=b;
- el('runManualRead').disabled=scanning||!/^\d{4}-\d{2}$/.test(ym)||m<1||m>12||manualPick.dateX==null||!Number.isInteger(a)||!Number.isInteger(b)||a<1||b<a||b>limit;
-}
 el('rowPickerCanvas').addEventListener('click',e=>{
- if(!lastOCR||scanning)return;const c=el('rowPickerCanvas'),r=c.getBoundingClientRect();const x=(e.clientX-r.left)*c.width/r.width,y=(e.clientY-r.top)*c.height/r.height;
- if(manualPick.nameX==null){manualPick.nameX=x;manualPick.nameY=y;el('pickerStep').textContent='② 写真の一番左の日付をタップしてください。'}
- else{manualPick.dateX=x;manualPick.dateY=y;el('firstDateInput').disabled=false;el('lastDateInput').disabled=false;el('pickerStep').textContent='③ 写真の最初と最後の日付を入力してください。';el('rowPickerStatus').textContent='11〜20日の写真なら「11」と「20」を入力します。日付の文字認識は使いません。'}
- drawPickerMarks();updateReadButton();
-});
-el('firstDateInput').oninput=updateReadButton;el('lastDateInput').oninput=updateReadButton;el('shiftMonth').onchange=updateReadButton;
-el('resetManualPick').onclick=()=>{if(lastOCR&&!scanning)showManualPicker(lastOCR.canvas)};
-el('closeRowPicker').onclick=()=>el('rowPicker').classList.add('hidden');
-el('pickerManualEntry').onclick=()=>{el('manualEntry').onclick()};
-function setReading(busy){
- scanning=busy;for(const id of ['openScanner','takePhoto','manualEntry','shiftMonth','firstDateInput','lastDateInput','resetManualPick','closeRowPicker','pickerManualEntry','runManualRead','rotatePhoto','photoZoom'])el(id).disabled=busy;
- if(!busy)updateReadButton();
-}
-async function preprocess(file){
- const url=URL.createObjectURL(file);let img;
- try{img=await PhotoReader.deadline(new Promise((resolve,reject)=>{const i=new Image();i.onload=()=>resolve(i);i.onerror=reject;i.src=url}),20000);
- const scale=Math.min(1,2200/Math.max(img.naturalWidth,img.naturalHeight));const canvas=document.createElement('canvas');canvas.width=Math.round(img.naturalWidth*scale);canvas.height=Math.round(img.naturalHeight*scale);canvas.getContext('2d',{willReadFrequently:true}).drawImage(img,0,0,canvas.width,canvas.height);return canvas;
- }finally{URL.revokeObjectURL(url)}
-}
-let autoGeneration=0;
-async function scan(file){
- if(scanning)return;const generation=++autoGeneration;setReading(true);lastOCR=null;el('ocrPreview').classList.add('hidden');el('rowPicker').classList.add('hidden');
- try{el('scanStatus').textContent='写真を表示しています…';const canvas=await preprocess(file);lastOCR={canvas};showManualPicker(canvas);el('scanStatus').textContent='氏名と日付を自動検出しています。手動指定で続けることもできます。';
- el('skipAuto').classList.remove('hidden');
- try{const pick=await PhotoReader.detect(canvas,data.name);if(generation!==autoGeneration)return;
- manualPick=pick;el('firstDateInput').value=pick.firstDate;el('lastDateInput').value=pick.lastDate;drawPickerMarks();el('pickerStep').textContent='検出位置と日付を確認して「この位置で読み取る」を押してください。';el('rowPickerStatus').textContent='氏名・日付を検出しました。緑の枠が本人の2便・3便か確認してください。';
- const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height);drawPickerMarks(ShiftGrid.locateGrid(pixels,pick));
- }catch(e){if(generation!==autoGeneration)return;showManualPicker(canvas);el('scanStatus').textContent='自動検出を確定できませんでした。写真の自分の名前をタップして続けてください。'}
- }catch{el('scanStatus').textContent='写真を開けませんでした。「勤務表を撮る / 選ぶ」で再試行するか、手入力で続けてください。'}
- finally{if(generation===autoGeneration){setReading(false);el('firstDateInput').disabled=manualPick.dateX==null;el('lastDateInput').disabled=manualPick.dateX==null;el('skipAuto').classList.add('hidden')}}
-}
-el('skipAuto').onclick=()=>{autoGeneration++;PhotoReader.cancelAuto();setReading(false);showManualPicker(lastOCR.canvas);el('skipAuto').classList.add('hidden')};
-el('runManualRead').onclick=async()=>{
- updateReadButton();if(el('runManualRead').disabled||!lastOCR)return;
- setReading(true);const status=el('rowPickerStatus'),wrap=el('scanProgressWrap'),bar=el('scanProgress');wrap.classList.remove('hidden');bar.style.width='2%';
  try{
-  status.textContent='本人の枠線と日付の列を確認しています…';
-  const canvas=lastOCR.canvas,pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height),grid=ShiftGrid.locateGrid(pixels,{...manualPick});drawPickerMarks(grid);
-  const {rows,evidence:snippets}=await PhotoReader.readCells(pixels,grid,(c,i,total)=>{status.textContent=`${c.day}日・${c.type==='second'?'2便':'3便'}を読取中 (${i+1}/${total})`;bar.style.width=`${Math.round((i+1)/total*100)}%`});
+  if(scanning){feedback.show('読み取り中…終了または中止してから位置を指定してください。');return}
+  if(photoState!=='ready'||!lastOCR){feedback.show('写真の準備ができるまでお待ちください。');return}
+  stopAuto();const c=el('rowPickerCanvas'),r=c.getBoundingClientRect();
+  if(!r.width||!r.height)throw new Error('写真の表示サイズを取得できません');
+  const x=(e.clientX-r.left)*c.width/r.width,y=(e.clientY-r.top)*c.height/r.height;
+  if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||y<0||x>=c.width||y>=c.height)throw new Error('写真の内側をタップしてください');
+  if(manualPick.nameX==null){manualPick.nameX=x;manualPick.nameY=y;el('pickerStep').textContent='② 写真の一番左の日付をタップしてください。';feedback.show('氏名位置を指定しました。最初の日付をタップしてください。')}
+  else{manualPick.dateX=x;manualPick.dateY=y;el('pickerStep').textContent='③ 最初・最後の日付を入力し「シフトを読み取る」を押してください。';feedback.show('日付位置を指定しました。最初・最後の日付を確認してください。')}
+  drawPickerMarks();logPositions();updateReadButton();
+ }catch(error){feedback.fail(error)}
+});
+for(const id of ['firstDateInput','lastDateInput','shiftMonth']){
+ for(const event of ['input','change'])el(id).addEventListener(event,()=>{try{updateReadButton()}catch(error){feedback.fail(error)}});
+}
+el('resetManualPick').onclick=()=>{try{if(lastOCR&&!scanning){stopAuto();showManualPicker(lastOCR.canvas);feedback.show('写真の準備ができました。自分の名前の位置をタップしてください。')}}catch(e){feedback.fail(e)}};
+el('closeRowPicker').onclick=()=>el('rowPicker').classList.add('hidden');
+el('pickerManualEntry').onclick=()=>el('manualEntry').onclick();
+async function preprocess(file){
+ const url=URL.createObjectURL(file);let img,timer;
+ try{
+ img=await new Promise((resolve,reject)=>{const i=new Image();timer=setTimeout(()=>{i.onload=null;i.onerror=null;reject(new Error('IMAGE_TIMEOUT'))},20000);i.onload=()=>{clearTimeout(timer);resolve(i)};i.onerror=()=>{clearTimeout(timer);reject(new Error('IMAGE_DECODE_FAILED'))};i.src=url});
+ if(!img.naturalWidth||!img.naturalHeight)throw new Error('IMAGE_DECODE_FAILED');
+ const scale=Math.min(1,2200/Math.max(img.naturalWidth,img.naturalHeight)),canvas=document.createElement('canvas');canvas.width=Math.round(img.naturalWidth*scale);canvas.height=Math.round(img.naturalHeight*scale);
+ const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('CANVAS_UNAVAILABLE');ctx.drawImage(img,0,0,canvas.width,canvas.height);return canvas;
+ }finally{clearTimeout(timer);URL.revokeObjectURL(url)}
+}
+async function attemptAuto(canvas,generation){
+ try{
+  if(!window.PhotoReader)throw new Error('OCR_UNAVAILABLE');
+  const pick=await PhotoReader.detect(canvas,data.name);
+  if(generation!==autoGeneration||scanning)return;
+  manualPick=pick;el('firstDateInput').value=pick.firstDate;el('lastDateInput').value=pick.lastDate;drawPickerMarks();
+  feedback.show('氏名・日付の候補を検出しました。位置と日付を確認して「シフトを読み取る」を押してください。');logPositions();
+ }catch(error){
+  if(generation!==autoGeneration)return;
+  feedback.log('自動検出：手動指定へ / '+feedback.errorText(error));
+  feedback.show('写真の準備ができました。自動検出を確定できないため、自分の名前の位置をタップしてください。');
+ }finally{if(generation===autoGeneration){autoActive=false;el('skipAuto').classList.add('hidden');updateReadButton()}}
+}
+async function scan(file){
+ if(scanning){feedback.show('処理中です。終了または中止してから写真を選んでください。');return}
+ stopAuto();const generation=autoGeneration;lastOCR=null;photoState='loading';scanning=true;
+ try{
+  refreshControls();el('ocrPreview').classList.add('hidden');el('rowPicker').classList.add('hidden');el('debugOutput').textContent='';feedback.show('写真を読み込み中…');feedback.log('画像：読み込み開始');
+  const canvas=await preprocess(file);lastOCR={canvas};photoState='ready';scanning=false;showManualPicker(canvas);
+  feedback.show('写真の準備ができました。自分の名前の位置をタップしてください。');logPositions();
+  autoActive=true;el('skipAuto').classList.remove('hidden');feedback.log('自動検出：開始（タップ指定で中止できます）');
+  void attemptAuto(canvas,generation);
+ }catch(error){photoState='error';lastOCR=null;feedback.fail(error)}
+ finally{scanning=false;refreshControls()}
+}
+el('skipAuto').onclick=()=>{stopAuto();feedback.show('写真の準備ができました。自分の名前の位置をタップしてください。');refreshControls()};
+const nextPaint=()=>new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
+function readFailure(error){
+ const descriptions={ROW_GRID_NOT_FOUND:'氏名の上下の枠線を確認してください。名前の中央を指定し直せます',COLUMN_GRID_NOT_FOUND:'最初の日付の位置と、最初・最後の日付を確認してください',OCR_UNAVAILABLE:'OCRファイルの読み込みと通信状態を確認してください',CANVAS_UNAVAILABLE:'写真を表示するためのメモリが不足していないか確認し、写真を選び直してください',OCR_TIMEOUT:'OCRが時間内に応答しませんでした。通信状態を確認して再試行してください',GRID_TIMEOUT:'枠線の解析が時間内に終わりませんでした。写真の向きと位置指定を確認してください',OCR_RESULT_INVALID:'OCR結果が不正です。写真を確認し、再試行してください'};
+ feedback.log('ERROR: '+feedback.errorText(error));feedback.show('読み取りに失敗しました。'+(descriptions[error.message]||feedback.errorText(error)+'。写真・入力内容・通信状態を確認してください。'), 'error');
+}
+window.startShiftRead=async function(){
+ let job=null,timer=null;
+ try{
+  if(scanning){feedback.show(photoState==='loading'?'写真を読み込み中です。準備ができるまでお待ちください。':'読み取り中…すでに処理を実行しています。');return}
+  logPositions();const missing=readValidation();
+  if(missing){feedback.show('入力不足：'+missing,'error');updateReadButton();return}
+  stopAuto();job={controller:new AbortController(),started:Date.now()};activeRead=job;setReading(true);
+  el('scanProgressWrap').classList.remove('hidden');el('scanProgress').style.width='2%';el('ocrPreview').classList.add('hidden');
+  feedback.show('読み取り中…');feedback.log('枠線解析：開始');
+  // Paint the feedback before copying pixels or doing any analysis.
+  await nextPaint();
+  timer=setInterval(()=>feedback.log(`処理中：${Math.floor((Date.now()-job.started)/1000)}秒経過`),10000);
+  if(!window.PhotoReader||typeof PhotoReader.locateGrid!=='function')throw new Error('OCR_UNAVAILABLE');
+  if(!window.ShiftGrid)throw new Error('GRID_LIBRARY_UNAVAILABLE');
+  const canvas=lastOCR.canvas,ctx=canvas.getContext('2d');if(!ctx)throw new Error('CANVAS_UNAVAILABLE');
+  const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
+  const grid=await PhotoReader.locateGrid(pixels,{...manualPick},job.controller.signal);drawPickerMarks(grid);feedback.log('枠線解析：完了');
+  feedback.show('読み取り中…OCRを準備しています。');feedback.log('OCR：開始');
+  const result=await PhotoReader.readCells(pixels,grid,(c,i,total)=>{
+   feedback.show(`読み取り中…${c.day}日・${c.type==='second'?'2便':'3便'} (${i+1}/${total})`);el('scanProgress').style.width=`${Math.round((i+1)/total*100)}%`;
+  },job.controller.signal);
+  if(job.controller.signal.aborted)throw new Error('READ_CANCELLED');
+  if(!result||!result.rows||!Array.isArray(result.evidence)||result.evidence.length!==grid.cells.length)throw new Error('OCR_RESULT_INVALID');
+  const {rows,evidence:snippets}=result;feedback.log('OCR：完了');
   el('debugOutput').textContent=JSON.stringify({dateColumns:grid.edges,row:{top:grid.top,bottom:grid.bottom},cells:snippets.map(({url,...c})=>c)},null,2);
   buildPreview(rows,{photo:true,autoOff:true,nameMode:'セル位置で読取。原本のマスと候補を照合'});
-  const trs=[...el('previewBody').children];for(const item of snippets){const tr=trs.find(t=>Number(t.dataset.day)===item.day);if(!tr)continue;const input=tr.querySelector(`[data-k="${item.type}"]`);const img=document.createElement('img');img.src=item.url;img.alt=`${item.day}日 ${item.type==='second'?'2便':'3便'} 原本`;img.className='cell-source';input.parentElement.appendChild(img);if(!rows[item.day].off&&(!item.value||item.confidence<85)){input.classList.add('needs-review');input.title='元のマスと照合してください'}}
-  el('rowPicker').classList.add('hidden');el('scanStatus').textContent='読み取り候補と元のマスを照合してください。写真で2便・3便とも空欄の休み候補にチェックしました。原本と照合してから登録してください。';
- }catch(e){
-  const errors={ROW_GRID_NOT_FOUND:'氏名の上下の枠線を確認できません。名前の中央を指定し直してください。',COLUMN_GRID_NOT_FOUND:'指定した日数分の列を確認できません。最初の日付の位置と、最初・最後の日付を確認してください。',OCR_UNAVAILABLE:'文字読み取りのファイルを読み込めません。アップロード内容と通信状態を確認してください。'};
-  status.textContent=errors[e.message]||'読み取りを完了できませんでした。通信状態を確認して再実行するか、手入力で続けてください。';
- }finally{wrap.classList.add('hidden');setReading(false)}
+  const trs=[...el('previewBody').children];if(!trs.length||el('ocrPreview').classList.contains('hidden'))throw new Error('確認画面を表示できません。年月と日付を確認してください');
+  for(const item of snippets){const tr=trs.find(t=>Number(t.dataset.day)===item.day);if(!tr)continue;const input=tr.querySelector(`[data-k="${item.type}"]`),img=document.createElement('img');img.src=item.url;img.alt=`${item.day}日 ${item.type==='second'?'2便':'3便'} 原本`;img.className='cell-source';input.parentElement.appendChild(img)}
+  el('rowPicker').classList.add('hidden');feedback.log('確認画面：表示');feedback.show('読み取りが完了しました。候補を確認・修正してから「この内容で登録」を押してください。','success');
+ }catch(error){
+  if(error.message==='READ_CANCELLED'){feedback.log('OCR：中止');feedback.show('読み取りを中止しました。位置を確認して再試行できます。')}
+  else readFailure(error);
+ }finally{
+  if(job){clearInterval(timer);job.controller.abort();if(activeRead===job)activeRead=null;scanning=false;el('scanProgressWrap').classList.add('hidden');refreshControls()}
+ }
 };
+el('cancelRead').onclick=()=>{if(activeRead){activeRead.controller.abort();feedback.show('読み取りを中止しています…')}};
 el('takePhoto').onclick=()=>el('cameraInput').click();
-el('cameraInput').onchange=e=>{const f=e.target.files?.[0];if(f)scan(f);e.target.value=''};
-el('photoInput').onchange=e=>{const f=e.target.files?.[0];if(f)scan(f);e.target.value=''};
+for(const id of ['cameraInput','photoInput'])el(id).onchange=e=>{const file=e.target.files&&e.target.files[0];if(file)void scan(file);e.target.value=''};
+feedback.log('読み取りボタン：イベント登録済み（click / タッチ・キーボード対応）');
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;el('installBtn').classList.remove('hidden')});
 el('installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}};
 if('serviceWorker'in navigator){
- navigator.serviceWorker.register('./sw.js?v=11',{updateViaCache:'none'}).then(r=>{r.update().catch(()=>{});document.addEventListener('visibilitychange',()=>{if(!document.hidden)r.update().catch(()=>{})})}).catch(console.warn);
+ navigator.serviceWorker.register('./sw.js?v=12',{updateViaCache:'none'}).then(r=>{r.update().catch(()=>{});document.addEventListener('visibilitychange',()=>{if(!document.hidden)r.update().catch(()=>{})})}).catch(console.warn);
  navigator.serviceWorker.addEventListener('controllerchange',()=>{el('updateNotice').classList.remove('hidden')});
 }
 el('reloadApp').onclick=()=>location.reload();
@@ -182,7 +252,9 @@ if(storageError){el('scanStatus').textContent=storageError;el('commitPreview').d
 
 render();
 
-el('backToPhoto').onclick=()=>{if(lastOCR)showManualPicker(lastOCR.canvas);else el('photoInput').click()};
+el('backToPhoto').onclick=()=>{if(lastOCR){stopAuto();showManualPicker(lastOCR.canvas);feedback.show('写真の準備ができました。位置を指定し直してください。')}else el('photoInput').click()};
 
 el('photoZoom').onchange=()=>{el('rowPickerCanvas').style.width=`${Number(el('photoZoom').value)*100}%`};
-el('rotatePhoto').onclick=()=>{if(!lastOCR||scanning)return;const old=lastOCR.canvas,c=document.createElement('canvas');c.width=old.height;c.height=old.width;const ctx=c.getContext('2d');ctx.translate(c.width,0);ctx.rotate(Math.PI/2);ctx.drawImage(old,0,0);lastOCR={canvas:c};showManualPicker(c)};
+el('rotatePhoto').onclick=()=>{if(!lastOCR||scanning)return;stopAuto();const old=lastOCR.canvas,c=document.createElement('canvas');c.width=old.height;c.height=old.width;const ctx=c.getContext('2d');ctx.translate(c.width,0);ctx.rotate(Math.PI/2);ctx.drawImage(old,0,0);lastOCR={canvas:c};showManualPicker(c)};
+
+refreshControls();

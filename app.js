@@ -100,7 +100,7 @@ el('commitPreview').onclick=()=>{
 
 
 const feedback=window.ScanFeedback;
-let photoState='empty',activeRead=null,autoGeneration=0,autoActive=false;
+let photoState='empty',activeRead=null,autoGeneration=0,autoActive=false,rowTapMode=null;
 const positionText=(x,y)=>Number.isFinite(x)&&Number.isFinite(y)?`x=${Math.round(x)} y=${Math.round(y)}`:'未指定';
 function logPositions(){feedback.log(`画像：${photoState==='ready'?'読み込み済み':photoState} / 氏名位置：${positionText(manualPick.nameX,manualPick.nameY)} / 日付位置：${positionText(manualPick.dateX,manualPick.dateY)}`)}
 function stopAuto(){autoGeneration++;autoActive=false;if(window.PhotoReader)PhotoReader.cancelAuto();el('skipAuto').classList.add('hidden')}
@@ -124,11 +124,13 @@ function updateReadButton(){
  const hint=el('readButtonHint');hint.textContent=scanning?'処理中です。中止して再指定できます。':readValidation()||'準備完了。「シフトを読み取る」を押してください。';
 }
 function refreshControls(){
+ for(const id of ['pickSecondRow','pickThirdRow','rowStepInput'])el(id).disabled=scanning||photoState!=='ready';
  for(const id of ['openScanner','takePhoto','manualEntry','shiftMonth','firstDateInput','lastDateInput','resetManualPick','closeRowPicker','pickerManualEntry','rotatePhoto','photoZoom'])el(id).disabled=scanning;
  el('cancelRead').classList.toggle('hidden',!activeRead);el('rowPicker').setAttribute('aria-busy',String(scanning));updateReadButton();
 }
 function setReading(busy){scanning=busy;refreshControls()}
 function showManualPicker(canvas){
+ rowTapMode=null;el('rowStepInput').value='';
  manualPick={nameX:null,nameY:null,dateX:null,dateY:null,firstDate:null,lastDate:null};
  const out=el('rowPickerCanvas');out.width=canvas.width;out.height=canvas.height;
  el('firstDateInput').value='';el('lastDateInput').value='';
@@ -141,7 +143,12 @@ function drawPickerMarks(grid){
  ctx.lineWidth=Math.max(2,out.width/500);ctx.font=`${Math.max(24,out.width/35)}px sans-serif`;
  for(const [x,y,label,color] of [[manualPick.nameX,manualPick.nameY,'①','#2563eb'],[manualPick.dateX,manualPick.dateY,'②','#dc2626']]){if(!Number.isFinite(x)||!Number.isFinite(y))continue;ctx.strokeStyle=color;ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,out.width/65,0,Math.PI*2);ctx.stroke();ctx.fillText(label,x+15,y-10)}
  if(grid){ctx.strokeStyle='#16a34a';for(const c of grid.cells)ctx.strokeRect(c.left,c.top,c.width,c.height)}
+ for(const [y,label] of [[manualPick.secondY,'2便'],[manualPick.thirdY,'3便']]){if(!Number.isFinite(y))continue;ctx.strokeStyle='#9333ea';ctx.fillStyle='#9333ea';ctx.beginPath();ctx.moveTo(manualPick.dateX||0,y);ctx.lineTo(out.width,y);ctx.stroke();ctx.fillText(label,Math.max(0,(manualPick.dateX||0)-70),y-5)}
 }
+function requestRowTap(type){if(scanning)return;rowTapMode=type;const message=type==='second'?'2便の行をタップしてください。最初の日付列の2便セル中央を指定すると、3便は自動推定します。':'最初の日付列の3便セル中央をタップしてください（任意の修正）。';el('pickerStep').textContent=message;feedback.show(message);el('rowPicker').classList.remove('hidden');el('pickerStep').scrollIntoView({block:'start',behavior:'smooth'})}
+el('pickSecondRow').onclick=()=>requestRowTap('second');
+el('pickThirdRow').onclick=()=>{if(!Number.isFinite(manualPick.secondY)){requestRowTap('second');return}requestRowTap('third')};
+el('rowStepInput').oninput=()=>{manualPick.rowStep=Number(el('rowStepInput').value)||null;if(Number.isFinite(manualPick.secondY)){manualPick.thirdY=null;drawPickerMarks();feedback.show('行間隔を変更しました。「シフトを読み取る」で確認できます。')}};
 el('rowPickerCanvas').addEventListener('click',e=>{
  try{
   if(scanning){feedback.show('読み取り中…終了または中止してから位置を指定してください。');return}
@@ -150,7 +157,8 @@ el('rowPickerCanvas').addEventListener('click',e=>{
   if(!r.width||!r.height)throw new Error('写真の表示サイズを取得できません');
   const x=(e.clientX-r.left)*c.width/r.width,y=(e.clientY-r.top)*c.height/r.height;
   if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||y<0||x>=c.width||y>=c.height)throw new Error('写真の内側をタップしてください');
-  if(manualPick.nameX==null){manualPick.nameX=x;manualPick.nameY=y;el('pickerStep').textContent='② 写真の一番左の日付をタップしてください。';feedback.show('氏名位置を指定しました。最初の日付をタップしてください。')}
+  if(rowTapMode){const type=rowTapMode;manualPick[type+'Y']=y;manualPick[type+'X']=x;if(type==='second'){manualPick.secondX=x;manualPick.thirdY=null}rowTapMode=null;el('pickerStep').textContent='行位置を指定しました。「シフトを読み取る」を押してください。';feedback.log(`${type==='second'?'2便':'3便'}の行：タップ y=${Math.round(y)}`);feedback.show(type==='second'?'2便の行を指定しました。3便は行間隔から推定します。「シフトを読み取る」を押してください。':'3便の行を修正しました。「シフトを読み取る」を押してください。')}
+  else if(manualPick.nameX==null){manualPick.nameX=x;manualPick.nameY=y;el('pickerStep').textContent='② 写真の一番左の日付をタップしてください。';feedback.show('氏名位置を指定しました。最初の日付をタップしてください。')}
   else{manualPick.dateX=x;manualPick.dateY=y;el('pickerStep').textContent='③ 最初・最後の日付を入力し「シフトを読み取る」を押してください。';feedback.show('日付位置を指定しました。最初・最後の日付を確認してください。')}
   drawPickerMarks();logPositions();updateReadButton();
  }catch(error){feedback.fail(error)}
@@ -217,7 +225,10 @@ window.startShiftRead=async function(){
   if(!window.ShiftGrid)throw new Error('GRID_LIBRARY_UNAVAILABLE');
   const canvas=lastOCR.canvas,ctx=canvas.getContext('2d');if(!ctx)throw new Error('CANVAS_UNAVAILABLE');
   const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
-  const grid=await PhotoReader.locateGrid(pixels,{...manualPick},job.controller.signal);drawPickerMarks(grid);feedback.log('枠線解析：完了');
+  const grid=await PhotoReader.locateGrid(pixels,{...manualPick},job.controller.signal);
+  for(const line of grid.diagnostics||[])feedback.log(line);
+  if(grid.needsRowTap){manualPick.rowStep=grid.suggestedStep;el('rowStepInput').value=Math.round(grid.suggestedStep);scanning=false;requestRowTap('second');return}
+  drawPickerMarks(grid);feedback.log('枠線解析：完了');
   feedback.show('読み取り中…OCRを準備しています。');feedback.log('OCR：開始');
   const result=await PhotoReader.readCells(pixels,grid,(c,i,total)=>{
    feedback.show(`読み取り中…${c.day}日・${c.type==='second'?'2便':'3便'} (${i+1}/${total})`);el('scanProgress').style.width=`${Math.round((i+1)/total*100)}%`;
@@ -232,6 +243,7 @@ window.startShiftRead=async function(){
   el('rowPicker').classList.add('hidden');feedback.log('確認画面：表示');feedback.show('読み取りが完了しました。候補を確認・修正してから「この内容で登録」を押してください。','success');
  }catch(error){
   if(error.message==='READ_CANCELLED'){feedback.log('OCR：中止');feedback.show('読み取りを中止しました。位置を確認して再試行できます。')}
+  else if(['ROW_GRID_NOT_FOUND','GRID_TIMEOUT','ROW_SPACING_INVALID'].includes(error.message)){feedback.log('行の自動推定：手動補助へ / '+error.message);scanning=false;requestRowTap('second')}
   else readFailure(error);
  }finally{
   if(job){clearInterval(timer);job.controller.abort();if(activeRead===job)activeRead=null;scanning=false;el('scanProgressWrap').classList.add('hidden');refreshControls()}
@@ -244,7 +256,7 @@ feedback.log('読み取りボタン：イベント登録済み（click / タッ�
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;el('installBtn').classList.remove('hidden')});
 el('installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}};
 if('serviceWorker'in navigator){
- navigator.serviceWorker.register('./sw.js?v=12',{updateViaCache:'none'}).then(r=>{r.update().catch(()=>{});document.addEventListener('visibilitychange',()=>{if(!document.hidden)r.update().catch(()=>{})})}).catch(console.warn);
+ navigator.serviceWorker.register('./sw.js?v=13',{updateViaCache:'none'}).then(r=>{r.update().catch(()=>{});document.addEventListener('visibilitychange',()=>{if(!document.hidden)r.update().catch(()=>{})})}).catch(console.warn);
  navigator.serviceWorker.addEventListener('controllerchange',()=>{el('updateNotice').classList.remove('hidden')});
 }
 el('reloadApp').onclick=()=>location.reload();

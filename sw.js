@@ -1,5 +1,5 @@
-const CACHE='delivery-shift-v12-click-feedback';
-const ASSETS=['./','./index.html','./grid-reader.js?v=12','./style.css?v=12','./photo-reader.js?v=12','./scan-feedback.js?v=12','./grid-worker.js?v=12','./vendor/tesseract.min.js','./app.js?v=12','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png'];
+const CACHE='delivery-shift-v13-bottom-row-fallback';
+const ASSETS=['./','./index.html','./grid-reader.js?v=13','./style.css?v=13','./photo-reader.js?v=13','./scan-feedback.js?v=13','./grid-worker.js?v=13','./vendor/tesseract.min.js','./app.js?v=13','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('delivery-shift-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||new URL(e.request.url).origin!==self.location.origin)return;e.respondWith(fetch(e.request,{cache:'no-cache'}).then(resp=>{if(resp.ok){const copy=resp.clone();e.waitUntil(caches.open(CACHE).then(c=>c.put(e.request,copy)))}return resp}).catch(async()=>{const hit=await caches.match(e.request);if(hit)return hit;if(e.request.mode==='navigate')return (await caches.match('./index.html'))||Response.error();return Response.error()}))});

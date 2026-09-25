@@ -30,7 +30,7 @@
    let worker,timer;const abort=()=>finish(new Error('READ_CANCELLED'));
    function finish(error,grid){clearTimeout(timer);if(signal)signal.removeEventListener('abort',abort);if(worker)worker.terminate();error?reject(error):resolve(grid)}
    try{
-    worker=new Worker(new URL('./grid-worker.js?v=12',location.href));
+    worker=new Worker(new URL('./grid-worker.js?v=13',location.href));
     worker.onmessage=e=>e.data&&e.data.grid?finish(null,e.data.grid):finish(new Error(e.data&&e.data.error||'GRID_RESULT_INVALID'));
     worker.onerror=e=>{e.preventDefault();finish(new Error(e.message||'GRID_WORKER_FAILED'))};
     timer=setTimeout(()=>finish(new Error('GRID_TIMEOUT')),20000);
@@ -76,13 +76,14 @@
    for(const c of grid.cells){
     if(signal&&signal.aborted)throw abortError();
     onProgress(c,evidence.length,grid.cells.length);
+    if(c.unavailable){rows[c.day]??={states:{}};rows[c.day][c.type]='';rows[c.day].states[c.type]='unresolved';evidence.push({...c,raw:'',confidence:0,blank:false,state:'unresolved',value:'',url:''});continue}
     const crop=ShiftGrid.cellImage(pixels,c),part=document.createElement('canvas');part.width=crop.width;part.height=crop.height;
     const ctx=part.getContext('2d');if(!ctx)throw new Error('CANVAS_UNAVAILABLE');
     ctx.putImageData(new ImageData(crop.data,crop.width,crop.height),0,0);
     const result=await run(w.recognize(part));
     if(!result||!result.data||typeof result.data.text!=='string')throw new Error('OCR_RESULT_INVALID');
-    const raw=normalize(result.data.text),confidence=Number(result.data.confidence),blank=ShiftGrid.isBlankCell(pixels,c)&&raw==='';
-    const valid=(c.type==='second'?/^2\d{2}$/:/^3\d{2}$/).test(raw),state=blank?'blank':valid&&confidence>=85?'candidate':'unresolved';
+    const raw=normalize(result.data.text),confidence=Number(result.data.confidence),blank=!c.uncertain&&ShiftGrid.isBlankCell(pixels,c)&&raw==='';
+    const valid=(c.type==='second'?/^2\d{2}$/:/^3\d{2}$/).test(raw),state=c.uncertain?'unresolved':blank?'blank':valid&&confidence>=85?'candidate':'unresolved';
     rows[c.day]??={states:{}};rows[c.day][c.type]=valid?raw:'';rows[c.day].states[c.type]=state;
     evidence.push({...c,raw,confidence,blank,state,value:valid?raw:'',url:part.toDataURL('image/png')});
    }

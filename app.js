@@ -124,7 +124,7 @@ function updateReadButton(){
  const hint=el('readButtonHint');hint.textContent=scanning?'処理中です。中止して再指定できます。':readValidation()||'準備完了。「シフトを読み取る」を押してください。';
 }
 function refreshControls(){
- for(const id of ['pickSecondRow','pickThirdRow','rowStepInput'])el(id).disabled=scanning||photoState!=='ready';
+ for(const id of ['pickSecondRow','pickThirdRow','rowStepInput','redoCorrection'])el(id).disabled=scanning||photoState!=='ready';
  for(const id of ['openScanner','takePhoto','manualEntry','shiftMonth','firstDateInput','lastDateInput','resetManualPick','closeRowPicker','pickerManualEntry','rotatePhoto','photoZoom'])el(id).disabled=scanning;
  el('cancelRead').classList.toggle('hidden',!activeRead);el('rowPicker').setAttribute('aria-busy',String(scanning));updateReadButton();
 }
@@ -174,8 +174,11 @@ async function preprocess(file){
  try{
  img=await new Promise((resolve,reject)=>{const i=new Image();timer=setTimeout(()=>{i.onload=null;i.onerror=null;reject(new Error('IMAGE_TIMEOUT'))},20000);i.onload=()=>{clearTimeout(timer);resolve(i)};i.onerror=()=>{clearTimeout(timer);reject(new Error('IMAGE_DECODE_FAILED'))};i.src=url});
  if(!img.naturalWidth||!img.naturalHeight)throw new Error('IMAGE_DECODE_FAILED');
+ // Safari/Chromium Image decoding applies EXIF before natural dimensions and drawImage.
+ // Do not rotate again: canvas pixels, displayed image and subsequent taps share one space.
+ feedback.log(`元画像（EXIF反映後）：${img.naturalWidth}×${img.naturalHeight} / EXIF向き正規化：ブラウザの画像デコーダー`);
  const scale=Math.min(1,2200/Math.max(img.naturalWidth,img.naturalHeight)),canvas=document.createElement('canvas');canvas.width=Math.round(img.naturalWidth*scale);canvas.height=Math.round(img.naturalHeight*scale);
- const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('CANVAS_UNAVAILABLE');ctx.drawImage(img,0,0,canvas.width,canvas.height);return canvas;
+ const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('CANVAS_UNAVAILABLE');ctx.drawImage(img,0,0,canvas.width,canvas.height);feedback.log(`解析画像サイズ：${canvas.width}×${canvas.height}`);return canvas;
  }finally{clearTimeout(timer);URL.revokeObjectURL(url)}
 }
 async function attemptAuto(canvas,generation){
@@ -196,7 +199,8 @@ async function scan(file){
  stopAuto();const generation=autoGeneration;lastOCR=null;photoState='loading';scanning=true;
  try{
   refreshControls();el('ocrPreview').classList.add('hidden');el('rowPicker').classList.add('hidden');el('debugOutput').textContent='';feedback.show('写真を読み込み中…');feedback.log('画像：読み込み開始');
-  const canvas=await preprocess(file);lastOCR={canvas};photoState='ready';scanning=false;showManualPicker(canvas);
+  const original=await preprocess(file);if(!window.PhotoCorrection)throw Error('画像補正のファイルを読み込めません。再読み込みしてください。');
+  const corrected=await PhotoCorrection.prepare(original),canvas=corrected.canvas;lastOCR=corrected;photoState='ready';scanning=false;showManualPicker(canvas);
   feedback.show('写真の準備ができました。自分の名前の位置をタップしてください。');logPositions();
   autoActive=true;el('skipAuto').classList.remove('hidden');feedback.log('自動検出：開始（タップ指定で中止できます）');
   void attemptAuto(canvas,generation);
@@ -204,6 +208,7 @@ async function scan(file){
  finally{scanning=false;refreshControls()}
 }
 el('skipAuto').onclick=()=>{stopAuto();feedback.show('写真の準備ができました。自分の名前の位置をタップしてください。');refreshControls()};
+el('redoCorrection').onclick=async()=>{if(scanning||!lastOCR)return;stopAuto();scanning=true;photoState='loading';refreshControls();el('rowPicker').classList.add('hidden');el('ocrPreview').classList.add('hidden');try{lastOCR=await PhotoCorrection.prepare(lastOCR.sourceCanvas||lastOCR.canvas);photoState='ready';scanning=false;showManualPicker(lastOCR.canvas);feedback.show('補正後の画像で氏名と最初の日付を指定してください。')}catch(error){photoState='error';feedback.show(error.message,'error')}finally{scanning=false;refreshControls()}};
 const nextPaint=()=>new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
 function readFailure(error){
  const descriptions={ROW_GRID_NOT_FOUND:'氏名の上下の枠線を確認してください。名前の中央を指定し直せます',COLUMN_GRID_NOT_FOUND:'最初の日付の位置と、最初・最後の日付を確認してください',OCR_UNAVAILABLE:'OCRファイルの読み込みと通信状態を確認してください',CANVAS_UNAVAILABLE:'写真を表示するためのメモリが不足していないか確認し、写真を選び直してください',OCR_TIMEOUT:'OCRが時間内に応答しませんでした。通信状態を確認して再試行してください',GRID_TIMEOUT:'枠線の解析が時間内に終わりませんでした。写真の向きと位置指定を確認してください',OCR_RESULT_INVALID:'OCR結果が不正です。写真を確認し、再試行してください'};
@@ -229,6 +234,9 @@ window.startShiftRead=async function(){
   for(const line of grid.diagnostics||[])feedback.log(line);
   if(grid.needsRowTap){manualPick.rowStep=grid.suggestedStep;el('rowStepInput').value=Math.round(grid.suggestedStep);scanning=false;requestRowTap('second');return}
   drawPickerMarks(grid);feedback.log('枠線解析：完了');
+  // Blank evidence uses rectified luminance before contrast boosts paper texture.
+  if(lastOCR.blankLuma)pixels.luma=lastOCR.blankLuma;
+  feedback.log(`補正後の表：日付列${grid.edges.length-1}列 / 本人行：${grid.estimated?'推定・照合が必要':'検出'} / 2便Y：${Math.round(grid.cells[0].top+grid.cells[0].height/2)} / 3便Y：${Math.round(grid.cells[1].top+grid.cells[1].height/2)}`);
   feedback.show('読み取り中…OCRを準備しています。');feedback.log('OCR：開始');
   const result=await PhotoReader.readCells(pixels,grid,(c,i,total)=>{
    feedback.show(`読み取り中…${c.day}日・${c.type==='second'?'2便':'3便'} (${i+1}/${total})`);el('scanProgress').style.width=`${Math.round((i+1)/total*100)}%`;
@@ -256,7 +264,7 @@ feedback.log('読み取りボタン：イベント登録済み（click / タッ�
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;el('installBtn').classList.remove('hidden')});
 el('installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}};
 if('serviceWorker'in navigator){
- navigator.serviceWorker.register('./sw.js?v=13',{updateViaCache:'none'}).then(r=>{r.update().catch(()=>{});document.addEventListener('visibilitychange',()=>{if(!document.hidden)r.update().catch(()=>{})})}).catch(console.warn);
+ navigator.serviceWorker.register('./sw.js?v=14',{updateViaCache:'none'}).then(r=>{r.update().catch(()=>{});document.addEventListener('visibilitychange',()=>{if(!document.hidden)r.update().catch(()=>{})})}).catch(console.warn);
  navigator.serviceWorker.addEventListener('controllerchange',()=>{el('updateNotice').classList.remove('hidden')});
 }
 el('reloadApp').onclick=()=>location.reload();

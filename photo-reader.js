@@ -30,7 +30,7 @@
    let worker,timer;const abort=()=>finish(new Error('READ_CANCELLED'));
    function finish(error,grid){clearTimeout(timer);if(signal)signal.removeEventListener('abort',abort);if(worker)worker.terminate();error?reject(error):resolve(grid)}
    try{
-    worker=new Worker(new URL('./grid-worker.js?v=13',location.href));
+    worker=new Worker(new URL('./grid-worker.js?v=14',location.href));
     worker.onmessage=e=>e.data&&e.data.grid?finish(null,e.data.grid):finish(new Error(e.data&&e.data.error||'GRID_RESULT_INVALID'));
     worker.onerror=e=>{e.preventDefault();finish(new Error(e.message||'GRID_WORKER_FAILED'))};
     timer=setTimeout(()=>finish(new Error('GRID_TIMEOUT')),20000);

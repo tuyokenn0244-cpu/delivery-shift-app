@@ -1,0 +1,2 @@
+importScripts('./image-geometry.js?v=14');
+self.onmessage=e=>{try{const {image,corners}=e.data;self.postMessage({progress:'勤務表を検出しています'});const detected=corners?{corners}:PhotoGeometry.detect(image);const result=PhotoGeometry.rectify(image,detected.corners,progress=>self.postMessage({progress}));self.postMessage({result:{...result,detected}},[result.image.data.buffer,result.image.luma.buffer])}catch(error){self.postMessage({error:error.message||String(error)})}};

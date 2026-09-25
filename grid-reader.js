@@ -76,11 +76,12 @@ function locateGrid(image,pick){
  let edges=Array.from({length:count+1},(_,i)=>pick.dateX+(i-.5)*spacing),columnEstimated=true;
  if(anchor>=0&&lines.length>=anchor+count+1){const candidate=lines.slice(anchor,anchor+count+1);if(candidate.slice(1).every((x,i)=>Math.abs(x-candidate[i]-spacing)<spacing*.2)){edges=candidate;columnEstimated=false}}
  diagnostics.push(`日付範囲：${pick.firstDate}〜${pick.lastDate}`,`日付列：${count}列${columnEstimated?'推定（原本と照合してください）':'検出'}`);
+ const estimated=columnEstimated||method!=='画像全体の上下罫線'||top.score<.8||bottom.score<.8;
  const cells=[];for(let i=0;i<count;i++){const left=edges[i],right=edges[i+1],cx=(left+right)/2,t=at(top,cx),b=at(bottom,cx),step=(b-t)/2;
-  for(let row=0;row<2;row++){const mx=Math.max(3,(right-left)*.08),my=Math.max(3,step*.12);const l=Math.max(0,Math.ceil(left+mx)),r=Math.min(w,Math.floor(right-mx)),a=Math.max(0,Math.ceil(t+step*row+my)),z=Math.min(h,Math.floor(t+step*(row+1)-my));cells.push({day:pick.firstDate+i,type:row?'third':'second',left:l,top:a,width:Math.max(0,r-l),height:Math.max(0,z-a),uncertain:true,unavailable:r-l<8||z-a<6})}
+  for(let row=0;row<2;row++){const mx=Math.max(3,(right-left)*.08),my=Math.max(3,step*.12);const l=Math.max(0,Math.ceil(left+mx)),r=Math.min(w,Math.floor(right-mx)),a=Math.max(0,Math.ceil(t+step*row+my)),z=Math.min(h,Math.floor(t+step*(row+1)-my));cells.push({day:pick.firstDate+i,type:row?'third':'second',left:l,top:a,width:Math.max(0,r-l),height:Math.max(0,z-a),uncertain:estimated,unavailable:r-l<8||z-a<6})}
  }
  diagnostics.push(`2便Y：${Math.round(at(top,pick.dateX)+(bottom.y-top.y)/4)}`,`3便Y：${Math.round(at(top,pick.dateX)+(bottom.y-top.y)*3/4)}`);
- return {cells,edges,top,bottom,diagnostics,estimated:true};
+ return {cells,edges,top,bottom,diagnostics,estimated};
 }
 function cellImage(image,cell){
  const scale=4,pad=20,width=cell.width*scale+pad*2,height=cell.height*scale+pad*2,data=new Uint8ClampedArray(width*height*4);data.fill(255);
@@ -94,7 +95,7 @@ function cellImage(image,cell){
 function isBlankCell(image,cell){
  // Ignore the outer margin where grid lines or the printed footer can intrude.
  const values=[],mx=Math.max(2,Math.floor(cell.width*.1)),my=Math.max(2,Math.floor(cell.height*.16));
- for(let y=cell.top+my;y<cell.top+cell.height-my;y++)for(let x=cell.left+mx;x<cell.left+cell.width-mx;x++){const i=(y*image.width+x)*4;values.push(image.data[i]*.299+image.data[i+1]*.587+image.data[i+2]*.114)}
+ for(let y=cell.top+my;y<cell.top+cell.height-my;y++)for(let x=cell.left+mx;x<cell.left+cell.width-mx;x++){const i=(y*image.width+x)*4;values.push(image.luma?image.luma[y*image.width+x]:image.data[i]*.299+image.data[i+1]*.587+image.data[i+2]*.114)}
  if(values.length<100)return false;
  values.sort((a,b)=>a-b);const background=values[Math.floor(values.length*.65)];
  if(background<75)return false;

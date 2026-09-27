@@ -78,7 +78,7 @@ function buildPreview(rows,meta={}){
     if(meta.photo){const check=document.createElement('button');check.type='button';check.textContent='原本と照合済み';check.onclick=()=>{preview[d].states={second:preview[d].second?'confirmed':'blank',third:preview[d].third?'confirmed':'blank'};preview[d].off=!preview[d].second&&!preview[d].third;tr.querySelector('[data-k="off"]').checked=preview[d].off;refresh()};tr.firstChild.appendChild(check)}
     refresh();body.appendChild(tr);
   }
-  el('previewNote').textContent=`登録先：${y}年${m}月。${meta.nameMode||'手入力'}。${meta.autoOff?'2便・3便とも写真の空欄を確認できた日は休みにチェック済みです。原本と照合してください。':'休みの日にチェックしてください。'}未確定は修正または原本と照合してください。「登録」のチェックを外した日は変更しません。登録対象日は既存データを置き換えます。`;
+  el('previewNote').textContent=`登録先：${y}年${m}月。${meta.nameMode||'手入力'}。${meta.autoOff?'両便が空欄の日は休み候補です。未確定の空欄は休みと断定せず、原本と照合してください。':'休みの日にチェックしてください。'}未確定は修正または原本と照合してください。「登録」のチェックを外した日は変更しません。登録対象日は既存データを置き換えます。`;
   el('ocrPreview').classList.remove('hidden');el('ocrPreview').scrollIntoView({behavior:'smooth'});
 }
 el('manualEntry').onclick=()=>{const ym=el('shiftMonth').value;if(!ym)return;const [y,m]=ym.split('-').map(Number);const rows={};for(let d=1;d<=new Date(y,m,0).getDate();d++)rows[d]={};buildPreview(rows)};
@@ -103,7 +103,7 @@ const feedback=window.ScanFeedback;
 let photoState='empty',activeRead=null,autoGeneration=0,autoActive=false,rowTapMode=null;
 const positionText=(x,y)=>Number.isFinite(x)&&Number.isFinite(y)?`x=${Math.round(x)} y=${Math.round(y)}`:'未指定';
 function logPositions(){feedback.log(`画像：${photoState==='ready'?'読み込み済み':photoState} / 氏名位置：${positionText(manualPick.nameX,manualPick.nameY)} / 日付位置：${positionText(manualPick.dateX,manualPick.dateY)}`)}
-function stopAuto(){autoGeneration++;autoActive=false;if(window.PhotoReader)PhotoReader.cancelAuto();el('skipAuto').classList.add('hidden')}
+function stopAuto(){autoGeneration++;autoActive=false;if(window.PhotoReader)PhotoReader.cancelAuto();if(window.OcrFirst)OcrFirst.cancel();el('skipAuto').classList.add('hidden')}
 function dateValue(id){const v=el(id).value.normalize('NFKC').trim();return /^\d+$/.test(v)?Number(v):NaN}
 function readValidation(){
  if(photoState==='loading')return '写真を読み込み中です。準備ができるまでお待ちください。';
@@ -181,26 +181,25 @@ async function preprocess(file){
  const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('CANVAS_UNAVAILABLE');ctx.drawImage(img,0,0,canvas.width,canvas.height);feedback.log(`解析画像サイズ：${canvas.width}×${canvas.height}`);return canvas;
  }finally{clearTimeout(timer);URL.revokeObjectURL(url)}
 }
+function showOcrRaw(passes){el('ocrRawText').textContent=passes.map(p=>p.title+'\n'+p.text).join('\n\n');el('ocrRawJson').textContent=JSON.stringify(passes.map(p=>({pass:p.id,text:p.text,tokens:p.tokens})),null,2)}
+el('showOcrRaw').onclick=()=>{el('ocrRawPanel').classList.toggle('hidden');if(!el('ocrRawPanel').classList.contains('hidden'))el('ocrRawPanel').scrollIntoView({block:'start',behavior:'smooth'})};
 async function attemptAuto(canvas,generation){
  try{
-  if(!window.PhotoReader)throw new Error('OCR_UNAVAILABLE');
-  const pick=await PhotoReader.detect(canvas,data.name);
+  if(!window.OcrFirst)throw Error('OCR_UNAVAILABLE');
+  const prepared=await OcrFirst.prepare(canvas,data.name,message=>{if(generation===autoGeneration&&!scanning)feedback.show(message)},passes=>{if(generation===autoGeneration)showOcrRaw(passes)});
   if(generation!==autoGeneration||scanning)return;
-  manualPick=pick;el('firstDateInput').value=pick.firstDate;el('lastDateInput').value=pick.lastDate;drawPickerMarks();
-  feedback.show('氏名・日付の候補を検出しました。位置と日付を確認して「シフトを読み取る」を押してください。');logPositions();
- }catch(error){
-  if(generation!==autoGeneration)return;
-  feedback.log('自動検出：手動指定へ / '+feedback.errorText(error));
-  feedback.show('写真の準備ができました。自動検出を確定できないため、自分の名前の位置をタップしてください。');
- }finally{if(generation===autoGeneration){autoActive=false;el('skipAuto').classList.add('hidden');updateReadButton()}}
+  lastOCR.textData=prepared;manualPick={...manualPick,...prepared.pick};
+  if(prepared.pick.firstDate){el('firstDateInput').value=prepared.pick.firstDate;el('lastDateInput').value=prepared.pick.lastDate}
+  drawPickerMarks();feedback.show(Number.isFinite(manualPick.nameY)?'氏名の候補を検出しました。氏名・日付の位置と範囲を確認して読み取ってください。':'写真の準備ができました。自分の名前をタップしてください。OCR原文も確認できます。');logPositions();
+ }catch(error){if(generation!==autoGeneration)return;feedback.log('自動文字認識：タップ指定へ / '+error.message);feedback.show('写真の準備ができました。自分の名前をタップしてください。')}
+ finally{if(generation===autoGeneration){autoActive=false;el('skipAuto').classList.add('hidden');updateReadButton()}}
 }
 async function scan(file){
  if(scanning){feedback.show('処理中です。終了または中止してから写真を選んでください。');return}
  stopAuto();const generation=autoGeneration;lastOCR=null;photoState='loading';scanning=true;
  try{
-  refreshControls();el('ocrPreview').classList.add('hidden');el('rowPicker').classList.add('hidden');el('debugOutput').textContent='';feedback.show('写真を読み込み中…');feedback.log('画像：読み込み開始');
-  const original=await preprocess(file);if(!window.PhotoCorrection)throw Error('画像補正のファイルを読み込めません。再読み込みしてください。');
-  const corrected=await PhotoCorrection.prepare(original),canvas=corrected.canvas;lastOCR=corrected;photoState='ready';scanning=false;showManualPicker(canvas);
+  refreshControls();el('ocrPreview').classList.add('hidden');el('rowPicker').classList.add('hidden');el('debugOutput').textContent='';showOcrRaw([]);feedback.show('写真を読み込み中…');feedback.log('画像：読み込み開始');
+  const canvas=await preprocess(file);lastOCR={canvas,sourceCanvas:canvas};photoState='ready';scanning=false;showManualPicker(canvas);
   feedback.show('写真の準備ができました。自分の名前の位置をタップしてください。');logPositions();
   autoActive=true;el('skipAuto').classList.remove('hidden');feedback.log('自動検出：開始（タップ指定で中止できます）');
   void attemptAuto(canvas,generation);
@@ -208,7 +207,7 @@ async function scan(file){
  finally{scanning=false;refreshControls()}
 }
 el('skipAuto').onclick=()=>{stopAuto();feedback.show('写真の準備ができました。自分の名前の位置をタップしてください。');refreshControls()};
-el('redoCorrection').onclick=async()=>{if(scanning||!lastOCR)return;stopAuto();scanning=true;photoState='loading';refreshControls();el('rowPicker').classList.add('hidden');el('ocrPreview').classList.add('hidden');try{lastOCR=await PhotoCorrection.prepare(lastOCR.sourceCanvas||lastOCR.canvas);photoState='ready';scanning=false;showManualPicker(lastOCR.canvas);feedback.show('補正後の画像で氏名と最初の日付を指定してください。')}catch(error){photoState='error';feedback.show(error.message,'error')}finally{scanning=false;refreshControls()}};
+el('redoCorrection').onclick=async()=>{if(scanning||!lastOCR)return;stopAuto();scanning=true;photoState='loading';refreshControls();el('rowPicker').classList.add('hidden');el('ocrPreview').classList.add('hidden');try{lastOCR=await PhotoCorrection.prepare(lastOCR.sourceCanvas||lastOCR.canvas);photoState='ready';scanning=false;showManualPicker(lastOCR.canvas);feedback.show('補正後の画像で氏名と最初の日付を指定してください。')}catch(error){lastOCR={canvas:lastOCR.sourceCanvas||lastOCR.canvas,sourceCanvas:lastOCR.sourceCanvas||lastOCR.canvas};photoState='ready';scanning=false;showManualPicker(lastOCR.canvas);feedback.show('補正を中止しました。元画像のままOCRを続けられます。')}finally{scanning=false;refreshControls()}};
 const nextPaint=()=>new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
 function readFailure(error){
  const descriptions={ROW_GRID_NOT_FOUND:'氏名の上下の枠線を確認してください。名前の中央を指定し直せます',COLUMN_GRID_NOT_FOUND:'最初の日付の位置と、最初・最後の日付を確認してください',OCR_UNAVAILABLE:'OCRファイルの読み込みと通信状態を確認してください',CANVAS_UNAVAILABLE:'写真を表示するためのメモリが不足していないか確認し、写真を選び直してください',OCR_TIMEOUT:'OCRが時間内に応答しませんでした。通信状態を確認して再試行してください',GRID_TIMEOUT:'枠線の解析が時間内に終わりませんでした。写真の向きと位置指定を確認してください',OCR_RESULT_INVALID:'OCR結果が不正です。写真を確認し、再試行してください'};
@@ -222,36 +221,21 @@ window.startShiftRead=async function(){
   if(missing){feedback.show('入力不足：'+missing,'error');updateReadButton();return}
   stopAuto();job={controller:new AbortController(),started:Date.now()};activeRead=job;setReading(true);
   el('scanProgressWrap').classList.remove('hidden');el('scanProgress').style.width='2%';el('ocrPreview').classList.add('hidden');
-  feedback.show('読み取り中…');feedback.log('枠線解析：開始');
+  feedback.show('読み取り中…');feedback.log('OCR-FIRST：開始（罫線検出は不要）');
   // Paint the feedback before copying pixels or doing any analysis.
   await nextPaint();
   timer=setInterval(()=>feedback.log(`処理中：${Math.floor((Date.now()-job.started)/1000)}秒経過`),10000);
-  if(!window.PhotoReader||typeof PhotoReader.locateGrid!=='function')throw new Error('OCR_UNAVAILABLE');
-  if(!window.ShiftGrid)throw new Error('GRID_LIBRARY_UNAVAILABLE');
-  const canvas=lastOCR.canvas,ctx=canvas.getContext('2d');if(!ctx)throw new Error('CANVAS_UNAVAILABLE');
-  const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
-  const grid=await PhotoReader.locateGrid(pixels,{...manualPick},job.controller.signal);
-  for(const line of grid.diagnostics||[])feedback.log(line);
-  if(grid.needsRowTap){manualPick.rowStep=grid.suggestedStep;el('rowStepInput').value=Math.round(grid.suggestedStep);scanning=false;requestRowTap('second');return}
-  drawPickerMarks(grid);feedback.log('枠線解析：完了');
-  // Blank evidence uses rectified luminance before contrast boosts paper texture.
-  if(lastOCR.blankLuma)pixels.luma=lastOCR.blankLuma;
-  feedback.log(`補正後の表：日付列${grid.edges.length-1}列 / 本人行：${grid.estimated?'推定・照合が必要':'検出'} / 2便Y：${Math.round(grid.cells[0].top+grid.cells[0].height/2)} / 3便Y：${Math.round(grid.cells[1].top+grid.cells[1].height/2)}`);
-  feedback.show('読み取り中…OCRを準備しています。');feedback.log('OCR：開始');
-  const result=await PhotoReader.readCells(pixels,grid,(c,i,total)=>{
-   feedback.show(`読み取り中…${c.day}日・${c.type==='second'?'2便':'3便'} (${i+1}/${total})`);el('scanProgress').style.width=`${Math.round((i+1)/total*100)}%`;
-  },job.controller.signal);
-  if(job.controller.signal.aborted)throw new Error('READ_CANCELLED');
-  if(!result||!result.rows||!Array.isArray(result.evidence)||result.evidence.length!==grid.cells.length)throw new Error('OCR_RESULT_INVALID');
-  const {rows,evidence:snippets}=result;feedback.log('OCR：完了');
-  el('debugOutput').textContent=JSON.stringify({dateColumns:grid.edges,row:{top:grid.top,bottom:grid.bottom},cells:snippets.map(({url,...c})=>c)},null,2);
-  buildPreview(rows,{photo:true,autoOff:true,nameMode:'セル位置で読取。原本のマスと候補を照合'});
+  if(!window.OcrFirst)throw Error('OCR_UNAVAILABLE');
+  const result=await OcrFirst.read(lastOCR.canvas,{...manualPick},data.name,lastOCR.textData,message=>feedback.show(message),showOcrRaw,job.controller.signal);
+  if(job.controller.signal.aborted)throw Error('READ_CANCELLED');
+  const {rows,evidence:snippets,layout}=result;feedback.log('OCR：完了');for(const error of result.errors)feedback.log('ERROR: '+error);for(const line of layout.diagnostics)feedback.log(line);drawPickerMarks(layout);
+  el('debugOutput').textContent=JSON.stringify({dayColumns:layout.dayColumns,rowLines:layout.rowLines,errors:result.errors,cells:snippets.map(({url,...c})=>c)},null,2);
+  buildPreview(rows,{photo:true,autoOff:true,nameMode:'OCR文字と座標で読取。未確定の休みも原本と照合'});
   const trs=[...el('previewBody').children];if(!trs.length||el('ocrPreview').classList.contains('hidden'))throw new Error('確認画面を表示できません。年月と日付を確認してください');
   for(const item of snippets){const tr=trs.find(t=>Number(t.dataset.day)===item.day);if(!tr)continue;const input=tr.querySelector(`[data-k="${item.type}"]`),img=document.createElement('img');img.src=item.url;img.alt=`${item.day}日 ${item.type==='second'?'2便':'3便'} 原本`;img.className='cell-source';input.parentElement.appendChild(img)}
-  el('rowPicker').classList.add('hidden');feedback.log('確認画面：表示');feedback.show('読み取りが完了しました。候補を確認・修正してから「この内容で登録」を押してください。','success');
+  el('rowPicker').classList.add('hidden');feedback.log('確認画面：表示');const pending=snippets.filter(c=>c.state==='unresolved').length;feedback.show(result.errors.length?'OCRの一部に失敗しました。未確定欄を入力・照合して登録できます。':pending?`解析が完了しました。未確定が${pending}項目あります。原本との照合・手動修正、または写真へ戻って2便行の追加指定をしてください。`:'読み取りが完了しました。候補を確認・修正してから「この内容で登録」を押してください。',pending||result.errors.length?'error':'success');
  }catch(error){
   if(error.message==='READ_CANCELLED'){feedback.log('OCR：中止');feedback.show('読み取りを中止しました。位置を確認して再試行できます。')}
-  else if(['ROW_GRID_NOT_FOUND','GRID_TIMEOUT','ROW_SPACING_INVALID'].includes(error.message)){feedback.log('行の自動推定：手動補助へ / '+error.message);scanning=false;requestRowTap('second')}
   else readFailure(error);
  }finally{
   if(job){clearInterval(timer);job.controller.abort();if(activeRead===job)activeRead=null;scanning=false;el('scanProgressWrap').classList.add('hidden');refreshControls()}
@@ -264,7 +248,7 @@ feedback.log('読み取りボタン：イベント登録済み（click / タッ�
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;el('installBtn').classList.remove('hidden')});
 el('installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}};
 if('serviceWorker'in navigator){
- navigator.serviceWorker.register('./sw.js?v=14',{updateViaCache:'none'}).then(r=>{r.update().catch(()=>{});document.addEventListener('visibilitychange',()=>{if(!document.hidden)r.update().catch(()=>{})})}).catch(console.warn);
+ navigator.serviceWorker.register('./sw.js?v=15',{updateViaCache:'none'}).then(r=>{r.update().catch(()=>{});document.addEventListener('visibilitychange',()=>{if(!document.hidden)r.update().catch(()=>{})})}).catch(console.warn);
  navigator.serviceWorker.addEventListener('controllerchange',()=>{el('updateNotice').classList.remove('hidden')});
 }
 el('reloadApp').onclick=()=>location.reload();

@@ -14,3 +14,5 @@
 .read-feedback{position:static;margin:8px auto;padding:12px;max-width:760px;background:#eff6ff;color:#1e3a8a;border:2px solid #93c5fd;border-radius:12px;font-weight:700}.read-feedback[data-level=error]{background:#fff1f2;color:#9f1239;border-color:#fda4af}.read-feedback[data-level=success]{background:#ecfdf5;color:#065f46;border-color:#6ee7b7}#scanDebugLog{max-height:320px;overflow:auto;padding:12px;background:#0f172a;color:#e2e8f0}#readButtonHint{font-weight:700}#runManualRead{touch-action:manipulation;min-height:52px}.card{scroll-margin-top:170px}
 
 #rowPickerStatus,#previewFeedback{padding:10px;background:#eff6ff;border-radius:10px;color:#1e3a8a;font-weight:700}#rowPickerStatus[data-level=error]{background:#fff1f2;color:#9f1239}
+
+#ocrRawText,#ocrRawJson{max-height:360px;overflow:auto;padding:12px;background:#f1f5f9;border-radius:8px}

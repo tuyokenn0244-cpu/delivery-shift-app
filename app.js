@@ -151,7 +151,7 @@ function drawPickerMarks(grid){
  if(!lastOCR||!lastOCR.canvas)return;const out=el('rowPickerCanvas'),ctx=out.getContext('2d');if(!ctx)throw new Error('CANVAS_UNAVAILABLE');ctx.drawImage(lastOCR.canvas,0,0);
  ctx.lineWidth=Math.max(2,out.width/500);ctx.font=`${Math.max(24,out.width/35)}px sans-serif`;
  for(const [x,y,label,color] of [[manualPick.nameX,manualPick.nameY,'①','#2563eb'],[manualPick.dateX,manualPick.dateY,'②','#dc2626']]){if(!Number.isFinite(x)||!Number.isFinite(y))continue;ctx.strokeStyle=color;ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,out.width/65,0,Math.PI*2);ctx.stroke();ctx.fillText(label,x+15,y-10)}
- if(grid){ctx.strokeStyle='#16a34a';for(const c of grid.cells)ctx.strokeRect(c.left,c.top,c.width,c.height)}
+ if(grid){ctx.strokeStyle='#16a34a';for(const c of grid.cells){if(c.overlay){ctx.beginPath();c.overlay.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.stroke()}else ctx.strokeRect(c.left,c.top,c.width,c.height)}}
  for(const [y,label] of [[manualPick.secondY,'2便'],[manualPick.thirdY,'3便']]){if(!Number.isFinite(y))continue;ctx.strokeStyle='#9333ea';ctx.fillStyle='#9333ea';ctx.beginPath();ctx.moveTo(manualPick.dateX||0,y);ctx.lineTo(out.width,y);ctx.stroke();ctx.fillText(label,Math.max(0,(manualPick.dateX||0)-70),y-5)}
 }
 function requestRowTap(type){if(scanning)return;rowTapMode=type;const message=type==='second'?'2便の行をタップしてください。最初の日付列の2便セル中央を指定すると、3便は自動推定します。':'最初の日付列の3便セル中央をタップしてください（任意の修正）。';el('pickerStep').textContent=message;feedback.show(message);el('rowPicker').classList.remove('hidden');el('pickerStep').scrollIntoView({block:'start',behavior:'smooth'})}
@@ -257,7 +257,7 @@ feedback.log('読み取りボタン：イベント登録済み（click / タッ�
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;el('installBtn').classList.remove('hidden')});
 el('installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}};
 if('serviceWorker'in navigator){
- navigator.serviceWorker.register('./sw.js?v=16',{updateViaCache:'none'}).then(r=>{r.update().catch(()=>{});document.addEventListener('visibilitychange',()=>{if(!document.hidden)r.update().catch(()=>{})})}).catch(console.warn);
+ navigator.serviceWorker.register('./sw.js?v=17',{updateViaCache:'none'}).then(r=>{r.update().catch(()=>{});document.addEventListener('visibilitychange',()=>{if(!document.hidden)r.update().catch(()=>{})})}).catch(console.warn);
  navigator.serviceWorker.addEventListener('controllerchange',()=>{el('updateNotice').classList.remove('hidden')});
 }
 el('reloadApp').onclick=()=>location.reload();

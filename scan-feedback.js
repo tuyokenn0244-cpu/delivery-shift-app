@@ -76,5 +76,5 @@
     if (lastTouch && lastTouch.button===button && event.detail!==0 && Date.now()-lastTouch.time<800) return;
     activate(button, 'click');
   }, true);
-  document.addEventListener('DOMContentLoaded', () => { log('画面：準備完了 / v16'); render(); });
+  document.addEventListener('DOMContentLoaded', () => { log('画面：準備完了 / v17'); render(); });
 })();

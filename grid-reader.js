@@ -105,5 +105,12 @@ function applyBlankDays(rows,evidence){
  for(const day of Object.keys(rows)){const cells=evidence.filter(c=>String(c.day)===day);if(cells.length===2&&cells.some(c=>c.type==='second')&&cells.some(c=>c.type==='third')&&cells.every(c=>c.blank&&c.raw==='')&&!rows[day].second&&!rows[day].third)rows[day].off=true}
  return rows;
 }
-root.ShiftGrid={locateGrid,cellImage,isBlankCell,applyBlankDays};if(typeof module!=='undefined')module.exports=root.ShiftGrid;
+// Follow curved paper one date column at a time instead of extrapolating a line
+// across the entire sheet. Narrow searches cannot jump to another employee.
+function refineRows(image,grid){const {width:w,height:h,data}=image;let previous=null;const diagnostics=[];
+ for(let i=0;i<grid.cells.length;i+=2){const a=grid.cells[i],b=grid.cells[i+1],x=a.left+a.width/2;const height=(b.top+b.height-a.top),margin=Math.max(3,height*.07);let top=a.top-margin,bottom=b.top+b.height+margin;if(previous){top=previous.top;bottom=previous.bottom}
+ const find=expected=>{let best=null;const radius=Math.max(6,(bottom-top)*.24);for(let y=Math.max(0,Math.round(expected-radius));y<Math.min(h,expected+radius);y++){let n=0,total=0;for(let xx=Math.ceil(a.left+a.width*.06);xx<a.left+a.width*.94;xx++){const j=(y*w+xx)*4;n+=data[j]+data[j+1]+data[j+2]<450;total++}const score=n/total;if(score>.72&&(!best||Math.abs(y-expected)<Math.abs(best.y-expected)))best={y,score}}return best?.y};
+ const t=find(top),z=find(bottom);if(t!==undefined&&z!==undefined&&z-t>height*.7&&z-t<height*1.4){previous={top:t,bottom:z};const step=(z-t)/2,pad=Math.max(3,step*.12);for(const [index,c] of [a,b].entries()){c.top=Math.ceil(t+step*index+pad);c.height=Math.floor(step-pad*2)}diagnostics.push(a.day+'日：湾曲した本人行をセル罫線で追跡')}else previous=null;
+ }grid.diagnostics.push(...diagnostics);return grid}
+root.ShiftGrid={locateGrid,cellImage,isBlankCell,applyBlankDays,refineRows};if(typeof module!=='undefined')module.exports=root.ShiftGrid;
 })(typeof globalThis!=='undefined'?globalThis:this);

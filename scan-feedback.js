@@ -35,7 +35,8 @@
   function activate(button, source) {
     if (!button || button.disabled) return;
     const saving=button.id==='commitPreview';log((saving?'登録':'読み取り')+'ボタン：押下検知 (' + source + ')');
-    show('読み取り中…');
+    show(saving?'保存中…':'読み取り中…');
+    if(saving){const node=document.getElementById('saveFeedback');if(node)node.textContent='保存中…'}
     try {
       const action=saving?window.commitShiftPreview:window.startShiftRead;
       if (typeof action !== 'function') throw new Error('アプリの準備が完了していません。再読み込みしてください');

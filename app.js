@@ -55,7 +55,7 @@ el('openScanner').onclick=()=>el('photoInput').click();
 el('closePreview').onclick=()=>el('ocrPreview').classList.add('hidden');
 el('addTime').onclick=()=>{const c=el('newCourse').value.trim(),t=el('newTime').value.trim();if(/^\d{3}$/.test(c)&&t){if(!changeSavedData(()=>data.timeMap[c]=t))return;el('newCourse').value='';el('newTime').value='';render()}};
 function buildPreview(rows,meta={}){
-  preview={}; const ym=el('shiftMonth').value;
+  preview={};el('confirmAllPreview').checked=false;el('saveFeedback').textContent='内容を確認して「この内容で登録」を押してください。'; const ym=el('shiftMonth').value;
   if(!/^\d{4}-\d{2}$/.test(ym)){el('scanStatus').textContent='勤務表の年月を選んでください。';return}
   previewMonth=ym; const [y,m]=ym.split('-').map(Number),last=new Date(y,m,0).getDate();
   const body=el('previewBody');body.innerHTML='';
@@ -69,6 +69,7 @@ function buildPreview(rows,meta={}){
     }
     const refresh=()=>{for(const type of ['second','third']){const state=preview[d].states[type];tr.querySelector(`[data-state-for="${type}"]`).textContent=state==='unresolved'?'未確定':state==='blank'?'空欄':state==='confirmed'?'確認済み':'候補';tr.querySelector(`[data-k="${type}"]`).classList.toggle('needs-review',state==='unresolved')}};
     tr.querySelectorAll('input').forEach(i=>i.oninput=()=>{
+     el('confirmAllPreview').checked=false;
      if(i.hasAttribute('data-include')){preview[d].include=i.checked;return}
      preview[d].include=true;tr.querySelector('[data-include]').checked=true;
      if(i.dataset.k==='off'){preview[d].off=i.checked;if(i.checked){preview[d].second='';preview[d].third='';preview[d].states={second:'blank',third:'blank'};tr.querySelectorAll('[data-k="second"],[data-k="third"]').forEach(x=>x.value='')}}
@@ -82,20 +83,28 @@ function buildPreview(rows,meta={}){
   el('ocrPreview').classList.remove('hidden');el('ocrPreview').scrollIntoView({behavior:'smooth'});
 }
 el('manualEntry').onclick=()=>{const ym=el('shiftMonth').value;if(!ym)return;const [y,m]=ym.split('-').map(Number);const rows={};for(let d=1;d<=new Date(y,m,0).getDate();d++)rows[d]={};buildPreview(rows)};
-el('commitPreview').onclick=()=>{
-  if(!previewMonth)return;
+window.commitShiftPreview=()=>{
+  feedback.log('登録ボタン：処理開始');
+  const notify=(message)=>{feedback.show(message,'error');el('saveFeedback').textContent=message;el('saveFeedback').dataset.level='error'};
+  el('saveFeedback').textContent='保存する内容を確認中…';
+  try{
+  if(!previewMonth){notify('読み取り結果がありません。先に写真を読み取ってください。');return}
   const entries=Object.entries(preview).filter(([,r])=>r.include);
-  if(entries.some(([,r])=>Object.values(r.states).includes('unresolved'))){el('previewNote').textContent='未確定のセルがあります。修正・原本との照合、または日付の登録チェックを外してください。';return}
+  if(!entries.length){notify('登録対象の日が選ばれていません。保存する日の「登録」にチェックしてください。');return}
+  if(el('confirmAllPreview').checked){for(const [,r] of entries){r.states={second:r.second?'confirmed':'blank',third:r.third?'confirmed':'blank'};r.off=!r.second&&!r.third}}
+
+  if(entries.some(([,r])=>Object.values(r.states).includes('unresolved'))){const days=entries.filter(([,r])=>Object.values(r.states).includes('unresolved')).map(([d])=>d+'日');notify('未確定：'+days.join('・')+'。数字を修正するか、原本を確認して下の「登録する全日を原本と照合しました」にチェックしてください。');return}
   for(const [d,r] of entries){
-    if((r.off&&(r.second||r.third))||(!r.off&&((r.second&&!/^2\d{2}$/.test(r.second))||(r.third&&!/^3\d{2}$/.test(r.third))))){el('previewNote').textContent=`${d}日を確認してください。休みとコースは同時登録できません。2便は200番台、3便は300番台で入力してください。`;return}
+    if((r.off&&(r.second||r.third))||(!r.off&&((r.second&&!/^2\d{2}$/.test(r.second))||(r.third&&!/^3\d{2}$/.test(r.third))))){notify(`${d}日を確認してください。休みとコースは同時登録できません。2便は200番台、3便は300番台で入力してください。`);return}
   }
   const next={...data.shifts};let count=0;
   for(const [d,r] of entries){const k=`${previewMonth}-${pad(d)}`;if(r.off){next[k]={off:true};count++}else if(r.second||r.third){next[k]={second:r.second||'',third:r.third||''};count++}}
-  if(!count){el('previewNote').textContent='コースを入力するか、休みにチェックを入れてください。';return}
+  if(!count){notify('コースを入力するか、休みにチェックを入れてください。');return}
   const previous=data.shifts;data.shifts=next;
-  try{save()}catch{data.shifts=previous;el('previewNote').textContent='保存できませんでした。ブラウザの保存容量・設定を確認してください。';return}
+  try{save()}catch(error){data.shifts=previous;feedback.log('保存ERROR: '+(error.message||error));notify(storageError||'保存できませんでした。'+(error.name==='QuotaExceededError'?'端末の空き容量またはSafariの保存容量を確認してください。':'Safariのデータ保存設定を確認してください。')+'入力内容は残しています。');return}
   const [y,m]=previewMonth.split('-').map(Number);view=new Date(y,m-1,1);selected=`${previewMonth}-${pad(entries.find(([,r])=>r.off||r.second||r.third)[0])}`;
-  render();el('ocrPreview').classList.add('hidden');feedback.show(`${count}日分を${y}年${m}月に登録しました。`,'success');
+  render();el('ocrPreview').classList.add('hidden');feedback.show(`${count}日分を${y}年${m}月に登録しました。`,'success');feedback.log('保存：完了 / カレンダー表示');
+  }catch(error){feedback.log('保存ERROR: '+(error.message||error));notify('登録処理でエラーが発生しました：'+(error.message||error)+'。入力内容を確認して再試行してください。')}
 };
 
 
@@ -248,7 +257,7 @@ feedback.log('読み取りボタン：イベント登録済み（click / タッ�
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;el('installBtn').classList.remove('hidden')});
 el('installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}};
 if('serviceWorker'in navigator){
- navigator.serviceWorker.register('./sw.js?v=15',{updateViaCache:'none'}).then(r=>{r.update().catch(()=>{});document.addEventListener('visibilitychange',()=>{if(!document.hidden)r.update().catch(()=>{})})}).catch(console.warn);
+ navigator.serviceWorker.register('./sw.js?v=16',{updateViaCache:'none'}).then(r=>{r.update().catch(()=>{});document.addEventListener('visibilitychange',()=>{if(!document.hidden)r.update().catch(()=>{})})}).catch(console.warn);
  navigator.serviceWorker.addEventListener('controllerchange',()=>{el('updateNotice').classList.remove('hidden')});
 }
 el('reloadApp').onclick=()=>location.reload();

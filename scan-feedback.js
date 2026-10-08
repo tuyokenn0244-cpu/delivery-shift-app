@@ -31,14 +31,15 @@
   // A touch can lose its compatibility click when an input blurs/layout shifts.
   // Handle a stationary pointer release, then consume its compatibility click.
   let touchStart = null, lastTouch = null;
-  const readButton = target => target && target.closest && target.closest('#runManualRead');
+  const readButton = target => target && target.closest && target.closest('#runManualRead, #commitPreview');
   function activate(button, source) {
     if (!button || button.disabled) return;
-    log('読み取りボタン：押下検知 (' + source + ')');
+    const saving=button.id==='commitPreview';log((saving?'登録':'読み取り')+'ボタン：押下検知 (' + source + ')');
     show('読み取り中…');
     try {
-      if (typeof window.startShiftRead !== 'function') throw new Error('アプリの準備が完了していません。再読み込みしてください');
-      Promise.resolve(window.startShiftRead()).catch(fail);
+      const action=saving?window.commitShiftPreview:window.startShiftRead;
+      if (typeof action !== 'function') throw new Error('アプリの準備が完了していません。再読み込みしてください');
+      Promise.resolve(action()).catch(fail);
     } catch (error) { fail(error); }
   }
   function startTouch(event, point) {
@@ -74,5 +75,5 @@
     if (lastTouch && lastTouch.button===button && event.detail!==0 && Date.now()-lastTouch.time<800) return;
     activate(button, 'click');
   }, true);
-  document.addEventListener('DOMContentLoaded', () => { log('画面：準備完了 / v15'); render(); });
+  document.addEventListener('DOMContentLoaded', () => { log('画面：準備完了 / v16'); render(); });
 })();

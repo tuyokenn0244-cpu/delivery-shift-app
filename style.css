@@ -16,3 +16,5 @@
 #rowPickerStatus,#previewFeedback{padding:10px;background:#eff6ff;border-radius:10px;color:#1e3a8a;font-weight:700}#rowPickerStatus[data-level=error]{background:#fff1f2;color:#9f1239}
 
 #ocrRawText,#ocrRawJson{max-height:360px;overflow:auto;padding:12px;background:#f1f5f9;border-radius:8px}
+
+.save-controls{margin-top:16px;padding:12px;border:2px solid #93c5fd;border-radius:12px;background:#eff6ff}.confirm-all{display:flex;align-items:flex-start;gap:10px;line-height:1.6}.confirm-all input{min-width:24px;width:24px;height:24px}#saveFeedback{font-weight:700;overflow-wrap:anywhere}#saveFeedback[data-level="error"]{color:#9f1239}#commitPreview{touch-action:manipulation;min-height:52px}
